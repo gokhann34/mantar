@@ -42,11 +42,12 @@ $('loginForm').addEventListener('submit',async e=>{
 
 function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
-  ['analyze','map','records'].forEach(name=>$(name+'View').classList.toggle('hidden',name!==tab));
+  ['analyze','map','records','encyclopedia'].forEach(name=>$(name+'View').classList.toggle('hidden',name!==tab));
   if(tab==='map') setTimeout(renderMap,80);
   if(tab==='records') renderRecords();
 }
 document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
+$('encyclopediaSearch').addEventListener('input',()=>{const q=$('encyclopediaSearch').value.trim().toLocaleLowerCase('tr-TR');document.querySelectorAll('.guide-card').forEach(card=>card.classList.toggle('hidden',!card.textContent.toLocaleLowerCase('tr-TR').includes(q)));});
 
 function addFiles(list) {
   const incoming = [...list];
@@ -218,9 +219,10 @@ function showDetail(id){
   const r=records.find(x=>x.id===id);if(!r)return;
   const photoHtml=(r.photos||[]).map(blob=>`<img src="${URL.createObjectURL(blob)}" alt="Mantar fotoğrafı">`).join('');
   const candidates=(r.analysis?.candidates||[]).map(c=>`<p><b>${esc(c.common_name)}</b> <em>${esc(c.scientific_name)}</em></p>`).join('');
-  $('detailContent').innerHTML=`<div class="detail-photos">${photoHtml}</div><h3>${esc(firstName(r))}</h3><p class="detail-meta">${dateLabel(r.createdAt)} · ${r.source==='packaged'?'Paketli kültür mantarı':'Doğadan toplanmış yabani örnek'}</p><p class="detail-meta">${esc(r.analysis?.summary||'')}</p>${candidates}<label class="note-label" for="recordNoteInput">Kişisel not / gözlem</label><textarea id="recordNoteInput" class="note-input" maxlength="2000" placeholder="Örn. bulunduğu ağaç, hava durumu, koku, renk değişimi…">${esc(r.note||'')}</textarea><div class="note-actions"><small id="noteCharCount">0 / 2000</small><button id="saveNoteBtn" class="button primary">Notu kaydet</button></div><div class="safety-lock">Bu uygulama tüketim güvenliği onayı vermez. Yabani mantarı tüketme.</div>${r.location?`<p class="detail-meta">Konum kayıtlı · ${r.location.lat.toFixed(5)}, ${r.location.lon.toFixed(5)}</p>`:'<p class="detail-meta">Bu kayıtta konum yok.</p>'}<div class="detail-buttons">${r.location?'<button id="detailShare" class="button primary">Konumu paylaş</button>':''}<button id="detailDelete" class="button secondary">Kaydı sil</button></div>`;
+  $('detailContent').innerHTML=`<div class="detail-photos">${photoHtml}</div><h3>${esc(firstName(r))}</h3><p class="detail-meta">${dateLabel(r.createdAt)} · ${r.source==='packaged'?'Paketli kültür mantarı':'Doğadan toplanmış yabani örnek'}</p><p class="detail-meta">${esc(r.analysis?.summary||'')}</p>${candidates}<label class="note-label" for="recordNoteInput">Kişisel not / gözlem</label><textarea id="recordNoteInput" class="note-input" maxlength="2000" placeholder="Örn. bulunduğu ağaç, hava durumu, koku, renk değişimi…">${esc(r.note||'')}</textarea><div class="note-actions"><small id="noteCharCount">0 / 2000</small><button id="saveNoteBtn" class="button primary">Notu kaydet</button></div><div class="safety-lock">Bu uygulama tüketim güvenliği onayı vermez. Yabani mantarı tüketme.</div>${r.location?`<p class="detail-meta">Konum kayıtlı · ${r.location.lat.toFixed(5)}, ${r.location.lon.toFixed(5)}</p>`:'<p class="detail-meta">Bu kayıtta konum yok.</p>'}<div class="detail-buttons"><button id="detailPdf" class="button primary">PDF raporu</button>${r.location?'<button id="detailShare" class="button primary">Konumu paylaş</button>':''}<button id="detailDelete" class="button secondary">Kaydı sil</button></div>`;
   const noteInput=$('recordNoteInput');const countNote=()=>{$('noteCharCount').textContent=`${noteInput.value.length} / 2000`;};countNote();noteInput.addEventListener('input',countNote);
   $('saveNoteBtn').addEventListener('click',async()=>{r.note=noteInput.value.trim();try{await dbPut(r);records=await dbGetAll();updateCounts();renderRecords();toast('Not kaydedildi.');}catch{toast('Not kaydedilemedi.');}});
+  $('detailPdf').addEventListener('click',()=>window.print());
   if(r.location)$('detailShare').addEventListener('click',()=>shareLocation(id));
   $('detailDelete').addEventListener('click',async()=>{if(confirm('Bu keşif kaydını ve fotoğraflarını bu cihazdan silmek istiyor musun?')){await dbDelete(id);records=await dbGetAll();updateCounts();renderRecords();renderMap();$('detailDialog').close();toast('Kayıt silindi.');}});
   $('detailDialog').showModal();
