@@ -113,7 +113,8 @@ async function pushRecordToCloud(record) {
     analysis:record.analysis,
     note:record.note||'',
     location:record.location||null,
-    photo_paths:photoPaths
+    photo_paths:photoPaths,
+    deleted_at:null
   };
   const saved=await supabaseClient.from('discoveries').upsert(row,{onConflict:'id'});
   if(saved.error)throw saved.error;
@@ -143,9 +144,11 @@ async function deleteCloudRecord(id) {
   const found=await supabaseClient.from('discoveries').select('photo_paths').eq('id',id).maybeSingle();
   if(found.error)throw found.error;
   if(!found.data)return;
-  const removed=await supabaseClient.from('discoveries').delete().eq('id',id);
-  if(removed.error)throw removed.error;
   const paths=found.data.photo_paths||[];
+  const removed=await supabaseClient.from('discoveries')
+    .update({deleted_at:new Date().toISOString(),photo_paths:[],updated_at:new Date().toISOString()})
+    .eq('id',id);
+  if(removed.error)throw removed.error;
   if(paths.length){
     const cleanup=await supabaseClient.storage.from('mantar-photos').remove(paths);
     if(cleanup.error)console.warn('Private photo cleanup failed:',cleanup.error.message);
@@ -162,7 +165,14 @@ async function syncCloudRecords(askConsent=false) {
     const remoteRows=response.data||[];
     const remoteById=new Map(remoteRows.map(row=>[row.id,row]));
     const localRows=await dbGetAll();
-    const localOnly=localRows.filter(row=>!remoteById.has(row.id));
+    const deletedIds=new Set(remoteRows.filter(row=>row.deleted_at).map(row=>row.id));
+    for(const deletedId of deletedIds){
+      if(localRows.some(row=>row.id===deletedId)){
+        const local=localRows.find(row=>row.id===deletedId);
+        if(local&&local.ownerId===authUser.id)await dbDelete(deletedId);
+      }
+    }
+    const localOnly=localRows.filter(row=>!remoteById.has(row.id)&&!deletedIds.has(row.id));
     let consent=localStorage.getItem('mantar-cloud-sync-'+authUser.id);
     if(!localRows.length&&!consent){
       consent='yes';
@@ -178,12 +188,14 @@ async function syncCloudRecords(askConsent=false) {
     if(consent==='yes'){
       for(const local of localRows){
         const remote=remoteById.get(local.id);
+        if(remote?.deleted_at)continue;
         const localTime=new Date(local.updatedAt||local.createdAt).getTime();
         const remoteTime=remote?new Date(remote.updated_at||remote.created_at).getTime():0;
         if(!remote||localTime>remoteTime)await pushRecordToCloud(local);
       }
     }
     for(const remote of remoteRows){
+      if(remote.deleted_at)continue;
       const local=localRows.find(row=>row.id===remote.id);
       const localTime=local?new Date(local.updatedAt||local.createdAt).getTime():0;
       const remoteTime=new Date(remote.updated_at||remote.created_at).getTime();
