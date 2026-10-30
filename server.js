@@ -205,8 +205,17 @@ app.post('/api/analyze', requireAuth, (req, res, next) => {
     console.log('Gemini output details:', { finishReason: payload.candidates?.[0]?.finishReason || 'unknown', outputLength: outputText.length });
     let result;
     try {
-      const cleaned = outputText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
-      result = JSON.parse(cleaned);
+      let cleaned = outputText.trim();
+      cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+      try {
+        result = JSON.parse(cleaned);
+      } catch {
+        const firstBrace = cleaned.indexOf('{');
+        const lastBrace = cleaned.lastIndexOf('}');
+        if (firstBrace < 0 || lastBrace <= firstBrace) throw new Error('No JSON object found');
+        result = JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+      }
+      if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('JSON root must be an object');
     } catch {
       console.error('Gemini returned non-JSON output.');
       return res.status(502).json({ error: 'Gemini yanıtı beklenen JSON biçiminde değil. Tekrar deneyebilirsin.' });
