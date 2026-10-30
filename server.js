@@ -174,7 +174,7 @@ app.post('/api/analyze', requireAuth, (req, res, next) => {
       body: JSON.stringify({
         contents: [{ role: 'user', parts }],
         generationConfig: {
-          maxOutputTokens: 2000,
+          maxOutputTokens: 4000,
           responseMimeType: 'application/json'
         }
       })
@@ -202,6 +202,7 @@ app.post('/api/analyze', requireAuth, (req, res, next) => {
       return res.status(502).json({ error: `Gemini analiz yanıtı oluşturamadı (${reason}). Fotoğrafları değiştirip tekrar dene.` });
     }
 
+    console.log('Gemini output details:', { finishReason: payload.candidates?.[0]?.finishReason || 'unknown', outputLength: outputText.length });
     let result;
     try {
       const cleaned = outputText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
