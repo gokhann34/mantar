@@ -2,3 +2,18 @@
 @media(min-width:640px){main{padding:25px 22px}.hero{min-height:220px;padding:30px}.hero h1{font-size:46px}.hero-mushroom{font-size:100px}.photo-grid{grid-template-columns:repeat(5,1fr)}}
 
 .login-overlay{position:fixed;inset:0;z-index:2000;background:rgba(13,31,21,.94);display:grid;place-items:center;padding:22px}.login-overlay.hidden{display:none}.login-card{width:min(100%,390px);padding:25px;display:flex;flex-direction:column;gap:11px}.login-icon{font-size:36px}.login-card h2{font:28px Georgia,serif;margin:0}.login-card p{font-size:11px;color:var(--muted);line-height:1.5;margin:0 0 6px}.login-card input{border:1px solid var(--line);border-radius:12px;padding:14px;font-size:14px}.login-card small{color:var(--red);font-size:10px;min-height:14px}
+
+
+/* Enhanced mushroom analysis result cards */
+.analysis-notice{margin:0 0 18px;padding:13px 15px;border:1px solid #d8c79d;border-radius:12px;background:#fbf5e5;color:#574626;font-size:12px;line-height:1.55}
+.candidate{padding:16px;margin:12px 0;border:1px solid var(--line);border-radius:15px;background:var(--paper)}
+.candidate-topline{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.candidate-number{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.confidence{display:inline-flex;align-items:center;border-radius:999px;padding:5px 9px;font-size:10px;font-weight:750;background:#f1eee5;color:#655b47}
+.confidence-low{background:#f7e9e3;color:#853e2c}
+.confidence-medium{background:#f8f0d9;color:#765d17}
+.confidence-high{background:#e5efe5;color:#28563a}
+.candidate h5{margin:14px 0 5px;font-size:12px;color:var(--forest)}
+.candidate .feature-list{margin:6px 0 0;padding-left:18px}
+.analysis-section{margin:16px 0;padding:12px 14px;border:1px solid var(--line);border-radius:12px}
+.analysis-section h4{margin-top:0}
