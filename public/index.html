@@ -37,6 +37,7 @@
       <button class="tab active" data-tab="analyze"> <span>⌕</span> Analiz</button>
       <button class="tab" data-tab="map"><span>⌖</span> Haritam</button>
       <button class="tab" data-tab="records"><span>▤</span> Kayıtlar <b id="recordCount">0</b></button>
+      <button class="tab" data-tab="encyclopedia"><span>✧</span> Tür rehberi</button>
     </nav>
 
     <section id="analyzeView" class="view active">
@@ -88,6 +89,23 @@
       <div class="archive-actions"><button id="exportRecordsBtn" class="button secondary">⬇ Yedek indir</button><label class="button secondary" for="importRecordsInput">⬆ Yedek geri yükle</label><input id="importRecordsInput" type="file" accept="application/json,.json" hidden /></div>
       <p class="microcopy archive-hint">Yedek dosyası kayıtlarını, notlarını, konumlarını ve fotoğraflarını içerir. Dosyayı güvenli bir yerde sakla.</p>
       <div id="recordsList" class="record-list"><div class="empty-state panel"><span>🍄</span><b>Henüz keşif kaydı yok</b><small>İlk analizini yaptıktan sonra burası dolacak.</small></div></div>
+    </section>
+    <section id="encyclopediaView" class="view hidden">
+      <div class="section-heading"><div><span class="eyebrow">SAHA REHBERİ</span><h2>Mantar türleri rehberi</h2></div><span class="pill">Eğitim amaçlı</span></div>
+      <div class="notice safety"><strong>Bu rehber teşhis aracı değildir.</strong><p>Türlerin görünümü yaşa, iklime ve bölgeye göre değişebilir. Fotoğrafa veya bu kısa açıklamalara bakarak mantar toplama ya da tüketme kararı verme.</p></div>
+      <input id="encyclopediaSearch" class="search encyclopedia-search" type="search" placeholder="Tür, bilimsel ad veya özellik ara…" aria-label="Tür rehberinde ara" />
+      <div id="encyclopediaList" class="encyclopedia-list">
+        <article class="guide-card"><span class="pill">Kültür türü</span><h3>Kültür mantarı</h3><em>Agaricus bisporus</em><p>Genellikle beyaz veya kahverengi şapkalı, kontrollü üretimle markette satılan tür.</p><div class="guide-caution"><b>Güvenlik notu</b><p>Doğada bulunan benzer görünümlü örnekleri bu tür sanma. Yalnızca güvenilir ambalajlı ürünü kullan.</p></div></article>
+        <article class="guide-card"><span class="pill">İlkbahar</span><h3>Kuzugöbeği</h3><em>Morchella türleri</em><p>Petek benzeri çukurlu şapkasıyla bilinir; gerçek kuzugöbeklerinde şapka içi genellikle boş yapıdadır.</p><div class="guide-caution"><b>Güvenlik notu</b><p>Gyromitra gibi benzer görünümlü türler ciddi zehirlenmeye neden olabilir. Uzman doğrulaması olmadan toplama veya tüketme.</p></div></article>
+        <article class="guide-card"><span class="pill">Odun üzerinde</span><h3>İstiridye mantarı</h3><em>Pleurotus ostreatus grubu</em><p>Yelpaze biçimli şapka, sap boyunca aşağı uzanabilen lameller ve kümeler görülebilir.</p><div class="guide-caution"><b>Güvenlik notu</b><p>Odun üzerinde yetişmesi veya kümelenmesi yenilebilirlik kanıtı değildir.</p></div></article>
+        <article class="guide-card"><span class="pill">Turuncu sütlü grup</span><h3>Kanlıca / Çıntar</h3><em>Lactarius deliciosus grubu</em><p>Turuncu tonlar ve kesildiğinde renkli süt benzeri sıvı bazı türlerde görülebilir; çoğunlukla çamlarla ilişkili habitatlarda bulunur.</p><div class="guide-caution"><b>Güvenlik notu</b><p>Renk tek başına teşhis değildir; benzer türler ve bölgesel farklılıklar vardır.</p></div></article>
+        <article class="guide-card"><span class="pill">Zehirli olabilir</span><h3>Sinek mantarı</h3><em>Amanita muscaria</em><p>Çoğu örnekte kırmızı-turuncu şapka ve açık renkli benekler görülür; görünüm değişebilir.</p><div class="guide-caution"><b>Güvenlik notu</b><p>Zehirli olabilir. Görünümü farklı Amanita türleri de ölümcül olabilir; yabani mantar tüketme.</p></div></article>
+        <article class="guide-card"><span class="pill">Ölümcül risk</span><h3>Ölüm meleği grubu</h3><em>Amanita phalloides ve yakın türler</em><p>Bazı örnekler beyazımsı, zeytinî veya yeşilimsi olabilir; renk ve görünüm değişkendir.</p><div class="guide-caution"><b>Güvenlik notu</b><p>Ölümcül karaciğer hasarına yol açabilir. Fotoğrafla ayırt etmeye çalışma; yabani mantar tüketme.</p></div></article>
+        <article class="guide-card"><span class="pill">Ciddi toksisite</span><h3>Sahte kuzugöbeği</h3><em>Gyromitra türleri</em><p>Bazı türlerde düzensiz, kıvrımlı ve beyin benzeri şapka yapısı görülür.</p><div class="guide-caution"><b>Güvenlik notu</b><p>Bazı türler ciddi, hatta ölümcül zehirlenmeye neden olabilir. Görsel benzerlikle karar verme.</p></div></article>
+        <article class="guide-card"><span class="pill">Geniş grup</span><h3>Bolet mantarları</h3><em>Boletaceae familyası</em><p>Lamel yerine süngerimsi gözenekli alt yüzey yaygın bir özelliktir; renkler çok değişkendir.</p><div class="guide-caution"><b>Güvenlik notu</b><p>Aile içinde yenilebilir, yenmeyen ve zehirli türler bulunur. Tek bir işaretle tüketim kararı verilmez.</p></div></article>
+        <article class="guide-card"><span class="pill">Ayırt etmesi zor</span><h3>Küçük kahverengi mantarlar</h3><em>Birçok cins ve familya</em><p>Küçük boy, kahverengi tonlar ve lamelli alt yüzey çok farklı türlerde görülebilir.</p><div class="guide-caution"><b>Güvenlik notu</b><p>Bazı türler ağır zehirlenme yapar. Genel görünümle güvenli tür belirlenemez; tüketme.</p></div></article>
+      </div>
+      <p class="microcopy">Bu içerik genel eğitim özetidir; yerel uzman doğrulamasının yerini tutmaz.</p>
     </section>
   </main>
 
