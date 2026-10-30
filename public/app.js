@@ -66,6 +66,143 @@ function dateLabel(value) { return new Intl.DateTimeFormat('tr-TR',{dateStyle:'m
 function firstName(record) { return record.analysis?.candidates?.[0]?.common_name || 'Tanımlanamayan örnek'; }
 function fileToBlob(file) { return file.slice(0, file.size, file.type); }
 
+function putRawRecord(value) {
+  return new Promise((resolve,reject)=>{
+    const request=tx('readwrite').put(value);
+    request.onsuccess=()=>resolve();
+    request.onerror=()=>reject(request.error);
+  });
+}
+async function claimLegacyRecords() {
+  if(!authUser)return;
+  const all=await dbGetAllRaw();
+  const legacy=all.filter(row=>!row.ownerId);
+  if(!legacy.length)return;
+  const accepted=confirm(
+    'Bu cihazda daha önce kaydedilmiş '+legacy.length+' keşif var. Bunları yalnızca senin hesabına aktaralım mı? Kabul edersen kayıtlar ve fotoğraflar hesabına özel bulut alanına yüklenir. Redd edersen kayıtlar bu cihazda yerel olarak kalır ve başka hesaplara gösterilmez.'
+  );
+  for(const row of legacy){
+    row.ownerId=accepted?authUser.id:'legacy-local-only';
+    await putRawRecord(row);
+  }
+}
+async function pushRecordToCloud(record) {
+  if(!authUser||!supabaseClient)throw new Error('Hesap oturumu bulunamadı.');
+  const storage=supabaseClient.storage.from('mantar-photos');
+  const photoPaths=[];
+  for(let index=0;index<(record.photos||[]).length;index++){
+    const blob=record.photos[index];
+    const extension=blob.type==='image/png'?'png'
+      :blob.type==='image/webp'?'webp'
+      :blob.type==='image/heic'?'heic'
+      :blob.type==='image/heif'?'heif':'jpg';
+    const path=authUser.id+'/'+record.id+'/'+index+'.'+extension;
+    const uploaded=await storage.upload(path,blob,{
+      contentType:blob.type||'image/jpeg',
+      upsert:true
+    });
+    if(uploaded.error)throw uploaded.error;
+    photoPaths.push(path);
+  }
+  const row={
+    id:record.id,
+    user_id:authUser.id,
+    created_at:record.createdAt,
+    updated_at:record.updatedAt||record.createdAt,
+    source:record.source,
+    analysis:record.analysis,
+    note:record.note||'',
+    location:record.location||null,
+    photo_paths:photoPaths
+  };
+  const saved=await supabaseClient.from('discoveries').upsert(row,{onConflict:'id'});
+  if(saved.error)throw saved.error;
+}
+async function pullRecordFromCloud(row) {
+  const photos=[];
+  const storage=supabaseClient.storage.from('mantar-photos');
+  for(const path of (row.photo_paths||[])){
+    const downloaded=await storage.download(path);
+    if(downloaded.error)throw downloaded.error;
+    photos.push(downloaded.data);
+  }
+  await putRawRecord({
+    id:row.id,
+    ownerId:authUser.id,
+    createdAt:row.created_at,
+    updatedAt:row.updated_at||row.created_at,
+    source:row.source,
+    analysis:row.analysis,
+    note:row.note||'',
+    location:row.location||null,
+    photos
+  });
+}
+async function deleteCloudRecord(id) {
+  if(!authUser||!supabaseClient)return;
+  const found=await supabaseClient.from('discoveries').select('photo_paths').eq('id',id).maybeSingle();
+  if(found.error)throw found.error;
+  if(!found.data)return;
+  const removed=await supabaseClient.from('discoveries').delete().eq('id',id);
+  if(removed.error)throw removed.error;
+  const paths=found.data.photo_paths||[];
+  if(paths.length){
+    const cleanup=await supabaseClient.storage.from('mantar-photos').remove(paths);
+    if(cleanup.error)console.warn('Private photo cleanup failed:',cleanup.error.message);
+  }
+}
+async function syncCloudRecords(askConsent=false) {
+  if(!accountAuthEnabled||!supabaseClient||!authUser||!db)return;
+  const button=$('cloudSyncButton');
+  if(button)button.disabled=true;
+  try{
+    await claimLegacyRecords();
+    const response=await supabaseClient.from('discoveries').select('*').order('created_at',{ascending:false});
+    if(response.error)throw response.error;
+    const remoteRows=response.data||[];
+    const remoteById=new Map(remoteRows.map(row=>[row.id,row]));
+    const localRows=await dbGetAll();
+    const localOnly=localRows.filter(row=>!remoteById.has(row.id));
+    let consent=localStorage.getItem('mantar-cloud-sync-'+authUser.id);
+    if(!localRows.length&&!consent){
+      consent='yes';
+      localStorage.setItem('mantar-cloud-sync-'+authUser.id,consent);
+    }
+    if(localOnly.length&&consent!=='yes'&&askConsent){
+      const accepted=confirm(
+        'Bu cihazda hesabına ait '+localOnly.length+' keşif kaydı var. Fotoğraflar, notlar ve isteğe bağlı konumlar güvenli bulut arşivine aktarılsın mı?'
+      );
+      consent=accepted?'yes':'no';
+      localStorage.setItem('mantar-cloud-sync-'+authUser.id,consent);
+    }
+    if(consent==='yes'){
+      for(const local of localRows){
+        const remote=remoteById.get(local.id);
+        const localTime=new Date(local.updatedAt||local.createdAt).getTime();
+        const remoteTime=remote?new Date(remote.updated_at||remote.created_at).getTime():0;
+        if(!remote||localTime>remoteTime)await pushRecordToCloud(local);
+      }
+    }
+    for(const remote of remoteRows){
+      const local=localRows.find(row=>row.id===remote.id);
+      const localTime=local?new Date(local.updatedAt||local.createdAt).getTime():0;
+      const remoteTime=new Date(remote.updated_at||remote.created_at).getTime();
+      if(!local||remoteTime>localTime)await pullRecordFromCloud(remote);
+    }
+    records=await dbGetAll();
+    records.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+    updateCounts();
+    renderRecords();
+    if(mapInstance)renderMap();
+    if(!$('statsView').classList.contains('hidden'))renderStats();
+    toast(consent==='yes'?'Bulut eşitlemesi tamamlandı.':'Hesabındaki kayıtlar indirildi. Eski cihaz kayıtları yerel bırakıldı.');
+  }catch(error){
+    toast('Bulut eşitlemesi tamamlanamadı: '+(error.message||'Bağlantı hatası.'));
+  }finally{
+    if(button)button.disabled=false;
+  }
+}
+
 let supabaseClient = null;
 let authUser = null;
 let accountAuthEnabled = false;
