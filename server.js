@@ -182,7 +182,8 @@ JSON şeması:
 
 app.post('/api/analyze', requireAuth, (req, res, next) => {
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
-  if (tooManyAnalyses(ip)) return res.status(429).json({ error: 'Bu IP adresinden saatlik analiz sınırına ulaşıldı. Bir süre sonra tekrar dene.' });
+  const limitKey = req.user?.id ? `user:${req.user.id}` : `ip:${ip}`;
+  if (tooManyAnalyses(limitKey)) return res.status(429).json({ error: 'Bu hesap için saatlik analiz sınırına ulaşıldı. Bir süre sonra tekrar dene.' });
   next();
 }, upload.array('photos', 5), async (req, res) => {
   try {
