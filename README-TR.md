@@ -30,6 +30,7 @@ GEMINI_MODEL=gemini-3.8-flash
 PORT=3000
 SUPABASE_URL=https://PROJECT_REF.supabase.co
 SUPABASE_ANON_KEY=SUPABASE_PUBLISHABLE_OR_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY=SERVER_ONLY_SECRET_SERVICE_ROLE_KEY
 # Supabase hesabı açıldığında APP_PASSWORD artık kullanılmaz; geçiş dönemi için tutulabilir.
 APP_PASSWORD=eski-tek-parola-gecis-icin
 ```
@@ -65,10 +66,10 @@ Hesap sistemi açılmadan önce:
 3. Supabase SQL Editor'de `supabase/migrations/20261031000100_multi_user_discoveries.sql` dosyasını çalıştır. Bu migration, kullanıcı kayıtlarını ve fotoğrafları `auth.uid()` ile sınırlar; fotoğraf deposu private olarak oluşturulur.
 4. Authentication → URL Configuration bölümünde Site URL değerini canlı uygulamanın HTTPS adresi yap. Redirect URL listesine `https://mantar-1.onrender.com/**` ekle (kendi domainin değişirse onu da ekle).
 5. Authentication → Providers → Email bölümünde e-posta girişini etkinleştir ve e-posta doğrulamasını açık tut. E-posta şablonları ve SMTP teslimatını gerçek kullanıcıya açmadan önce test et.
-6. Render → Environment bölümüne `SUPABASE_URL` ve `SUPABASE_ANON_KEY` ekle. `SUPABASE_ANON_KEY` yalnızca Supabase'in publishable/anon public key değeridir; service_role değildir.
+6. Render → Environment bölümüne `SUPABASE_URL`, `SUPABASE_ANON_KEY` ve `SUPABASE_SERVICE_ROLE_KEY` ekle. `SUPABASE_ANON_KEY` yalnızca Supabase'in publishable/anon public key değeridir. `SUPABASE_SERVICE_ROLE_KEY` yalnızca sunucuda hesap silme ve ilgili özel verileri temizleme için kullanılır; **tarayıcıya, HTML/JS dosyalarına veya GitHub'a asla koyma.**
 7. Yeni bir test hesabı oluştur. İki ayrı hesapla kayıtların, fotoğrafların ve konumların birbirinden ayrıldığını doğrulamadan herkese duyurma.
 
-Kullanıcı keşifleri kendi cihazında IndexedDB'de saklanmaya devam eder; giriş yapan kişi isterse eski cihaz kayıtlarını hesabına taşır. Bulut arşivinde tablo RLS kuralları ve private fotoğraf deposu kullanıcı sahipliğini zorunlu kılar. Hesapla giriş yapıldığında analiz API'si de Supabase erişim token'ını sunucu tarafında doğrular.
+Kullanıcı keşifleri kendi cihazında IndexedDB'de saklanmaya devam eder; giriş yapan kişi isterse eski cihaz kayıtlarını hesabına taşır. Bulut arşivinde tablo RLS kuralları ve private fotoğraf deposu kullanıcı sahipliğini zorunlu kılar. Hesapla giriş yapıldığında analiz API'si de Supabase erişim token'ını sunucu tarafında doğrular. Kullanıcı arayüzündeki hesap silme işlemi, sunucudaki service_role anahtarıyla ilgili fotoğraf nesnelerini ve hesabı kalıcı olarak kaldırır.
 
 E-posta doğrulama ve parola sıfırlama bağlantıları Supabase'in izin verilen redirect adreslerine bağlıdır. Supabase SMTP/teslimat ayarlarını yapmadan canlı kullanıcı kayıtlarını açma.
 
