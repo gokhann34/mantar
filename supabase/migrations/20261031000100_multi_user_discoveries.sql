@@ -17,6 +17,9 @@ create table if not exists public.discoveries (
 create index if not exists discoveries_user_created_idx
   on public.discoveries (user_id, created_at desc);
 
+alter table public.discoveries
+  add column if not exists deleted_at timestamptz;
+
 alter table public.discoveries enable row level security;
 
 grant select, insert, update, delete
