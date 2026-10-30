@@ -142,10 +142,12 @@ app.post('/api/analyze', requireAuth, (req, res, next) => {
   next();
 }, upload.array('photos', 5), async (req, res) => {
   try {
+    console.log('Analyze request received.');
     const files = req.files || [];
     if (files.length < 2) return res.status(400).json({ error: 'Tanıma için en az 2 farklı açıdan fotoğraf yüklemelisin.' });
     if (files.length > 5) return res.status(400).json({ error: 'En fazla 5 fotoğraf yükleyebilirsin.' });
     const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+    console.log('Analyze upload validated:', { photos: files.length, totalBytes });
     if (totalBytes > 18 * 1024 * 1024) {
       return res.status(413).json({ error: 'Fotoğrafların toplam boyutu 18 MB sınırını aşıyor. Daha küçük fotoğraflarla tekrar dene.' });
     }
@@ -161,6 +163,7 @@ app.post('/api/analyze', requireAuth, (req, res, next) => {
       parts.push({ inline_data: { mime_type: file.mimetype, data: file.buffer.toString('base64') } });
     }
 
+    console.log('Sending image request to Gemini:', { model: GEMINI_MODEL, photos: files.length });
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
       method: 'POST',
       headers: {
@@ -177,6 +180,7 @@ app.post('/api/analyze', requireAuth, (req, res, next) => {
       })
     });
 
+    console.log('Gemini HTTP response:', response.status);
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       const message = payload?.error?.message || `Gemini API hata verdi (${response.status}).`;
@@ -215,6 +219,7 @@ app.post('/api/analyze', requireAuth, (req, res, next) => {
     if (!Array.isArray(result.risk_notes)) result.risk_notes = [];
     result.risk_notes.unshift('Bu sonuç yalnızca fotoğrafa dayalı ön değerlendirmedir. Yabani mantarı tüketme; uzman mikolog veya yetkili tarafından yerinde doğrulat.');
 
+    console.log('Gemini analysis parsed successfully.');
     res.json({ result, provider: 'Google Gemini', model: GEMINI_MODEL });
   } catch (error) {
     if (error instanceof multer.MulterError) {
