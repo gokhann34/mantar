@@ -113,14 +113,33 @@ async function analyze(){
   finally{$('loading').classList.add('hidden');$('analyzeBtn').disabled=pendingFiles.length<2;}
 }
 function renderResult(result){
-  const candidates=result.candidates||[];
-  const candidatesHtml=candidates.length?candidates.map(c=>`<div class="candidate"><b>${esc(c.common_name||'Olası tür belirtilmedi')}</b><em>${esc(c.scientific_name||'Bilimsel ad belirsiz')} · Güven: ${esc(c.confidence||'low')}</em><p>${(c.reasons||[]).map(esc).join(' · ')}</p>${(c.lookalikes||[]).length?`<p><strong>Benzer türler:</strong> ${(c.lookalikes||[]).map(esc).join(', ')}</p>`:''}</div>`).join(''):'<p class="microcopy">Fotoğraflardan güvenilir bir tür adayı çıkarılamadı.</p>';
+  const candidates=Array.isArray(result.candidates)?result.candidates:[];
+  const confidenceLabel=value=>({low:'Düşük',medium:'Orta',high:'Yüksek'}[(value||'low').toLowerCase()]||'Belirsiz');
+  const candidatesHtml=candidates.length?candidates.map((candidate,index)=>{
+    const reasons=Array.isArray(candidate.reasons)?candidate.reasons:[];
+    const lookalikes=Array.isArray(candidate.lookalikes)?candidate.lookalikes:[];
+    return `<article class="candidate">
+      <div class="candidate-topline"><span class="candidate-number">Aday ${index+1}</span><span class="confidence confidence-${esc((candidate.confidence||'low').toLowerCase())}">Görsel benzerlik: ${esc(confidenceLabel(candidate.confidence))}</span></div>
+      <b>${esc(candidate.common_name||'Olası tür belirtilmedi')}</b>
+      <em>${esc(candidate.scientific_name||'Bilimsel ad belirsiz')}</em>
+      ${reasons.length?`<h5>Bu adayı düşündüren özellikler</h5><ul class="feature-list">${reasons.map(reason=>`<li>${esc(reason)}</li>`).join('')}</ul>`:''}
+      ${lookalikes.length?`<p><strong>Karıştırılabileceği türler:</strong> ${lookalikes.map(esc).join(', ')}</p>`:''}
+    </article>`;
+  }).join(''):'<p class="microcopy">Fotoğraflardan güvenilir bir tür adayı çıkarılamadı. Daha net ve farklı açılardan fotoğraflar eklemeyi dene.</p>';
   const f=result.visible_features||{};
-  const features=[['Şapka',f.cap],['Alt yüzey',f.underside],['Sap',f.stem],['Taban',f.base],['Habitat ipuçları',f.habitat_clues]].filter(x=>x[1]);
-  $('resultPanel').innerHTML=`<div class="result-head"><span>FOTOĞRAFLI ÖN İNCELEME</span><h3>${result.is_mushroom?'Mantar örneği incelendi':'Mantar olduğu doğrulanamadı'}</h3><p>${esc(result.summary||'Fotoğraflar incelendi; sonuçlar kesin teşhis değildir.')}</p></div><div class="result-body"><h4>Olası türler</h4>${candidatesHtml}${features.length?`<h4>Görülebilen özellikler</h4><ul class="feature-list">${features.map(([k,v])=>`<li><b>${esc(k)}:</b> ${esc(v)}</li>`).join('')}</ul>`:''}${(result.missing_views||[]).length?`<h4>Eksik fotoğraf açıları</h4><ul class="feature-list">${result.missing_views.map(v=>`<li>${esc(v)}</li>`).join('')}</ul>`:''}<div class="safety-lock"><b>⚠ TÜKETİM ONAYI VERİLMEDİ</b><br>Bu uygulama yabani mantarlara yenilebilir onayı vermez. Tahmin ne kadar yüksek görünürse görünsün mantarı tüketme. Uzman doğrulaması gereklidir.${(result.risk_notes||[]).length?`<br><br>${result.risk_notes.map(esc).join('<br>')}`:''}</div>${selectedSource()==='packaged'?`<h4>Kültür mantarı için genel tarif</h4><div class="candidate"><b>Sarımsaklı tereyağında sote</b><p>Yalnızca ambalajlı, marketten alınmış kültür mantarı için: mantarı temizle ve dilimle. Tavada tereyağıyla yüksek ateşte suyunu salıp çekene kadar sotele. Sarımsak, tuz, karabiber ve maydanoz ekle; iyice pişir.</p></div>`:''}<div class="result-actions"><button id="saveRecordBtn" class="button primary">Keşfi kaydet</button><button id="newAnalysisBtn" class="button secondary">Yeni analiz</button></div></div>`;
+  const features=[['Şapka',f.cap],['Alt yüzey',f.underside],['Sap',f.stem],['Sap tabanı',f.base],['Habitat ipuçları',f.habitat_clues]].filter(x=>x[1]&&String(x[1]).trim());
+  const missing=Array.isArray(result.missing_views)?result.missing_views:[];
+  const risks=Array.isArray(result.risk_notes)?result.risk_notes:[];
+  $('resultPanel').innerHTML=`<div class="result-head"><span>FOTOĞRAFLI ÖN İNCELEME</span><h3>${result.is_mushroom?'Mantar örneği incelendi':'Mantar olduğu doğrulanamadı'}</h3><p>${esc(result.summary||'Fotoğraflar incelendi; sonuçlar kesin teşhis değildir.')}</p></div><div class="result-body">
+    <div class="analysis-notice"><strong>Önemli:</strong> Aşağıdaki adaylar yalnızca fotoğraflardaki görsel benzerliğe dayanır; güven etiketi tür teşhisinin doğruluğunu veya yenilebilirliği göstermez.</div>
+    <h4>Olası tür adayları</h4>${candidatesHtml}
+    ${features.length?`<h4>Fotoğraflarda görülen özellikler</h4><ul class="feature-list">${features.map(([label,value])=>`<li><b>${esc(label)}:</b> ${esc(value)}</li>`).join('')}</ul>`:''}
+    ${missing.length?`<section class="analysis-section"><h4>Eksik fotoğraf açıları</h4><p>Bu görüntüler değerlendirmeyi iyileştirebilir:</p><ul class="feature-list">${missing.map(view=>`<li>${esc(view)}</li>`).join('')}</ul></section>`:''}
+    <div class="safety-lock"><b>⚠ TÜKETİM GÜVENLİĞİ DOĞRULANMADI</b><br>Fotoğraftan mantarın yenilebilir olduğu belirlenemez. Yabani mantarı tüketme; şüpheli örneği yetkin bir uzmana yerinde doğrulat.${risks.length?`<br><br>${risks.map(esc).join('<br>')}`:''}</div>
+    ${selectedSource()==='packaged'?`<h4>Kültür mantarı için genel tarif</h4><div class="candidate"><b>Sarımsaklı tereyağında sote</b><p>Yalnızca güvenilir ambalajlı, marketten alınmış kültür mantarı için: temizleyip dilimle. Tavada tereyağıyla sotele; sarımsak, tuz, karabiber ve maydanoz ekleyip iyice pişir.</p></div>`:''}
+    <div class="result-actions"><button id="saveRecordBtn" class="button primary">Keşfi kaydet</button><button id="newAnalysisBtn" class="button secondary">Yeni analiz</button></div></div>`;
   $('saveRecordBtn').addEventListener('click',saveRecord);$('newAnalysisBtn').addEventListener('click',()=>{$('resultPanel').classList.add('hidden');pendingAnalysis=null;pendingFiles=[];pendingLocation=null;$('locationTitle').textContent='Konum eklenmedi';$('locationText').textContent='GPS yalnızca sen istediğinde alınır ve analiz servisine gönderilmez.';$('getLocationBtn').textContent='Konum ekle';renderPhotoGrid();window.scrollTo({top:0,behavior:'smooth'});});
 }
-
 async function saveRecord(){
   if(!pendingAnalysis){toast('Önce fotoğraf analizi yapmalısın.');return;}
   const record={id:crypto.randomUUID(),createdAt:new Date().toISOString(),source:selectedSource(),analysis:pendingAnalysis,photos:pendingFiles.map(fileToBlob),location:pendingLocation?{...pendingLocation}:null};
