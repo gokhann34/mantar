@@ -399,6 +399,29 @@ $('accountLogout').addEventListener('click', async () => {
   const result = await supabaseClient.auth.signOut();
   if (result.error) toast('Oturum kapatılamadı: ' + result.error.message);
 });
+$('accountDelete').addEventListener('click', async () => {
+  if (!authUser || !supabaseClient) return;
+  const confirmation = prompt('Hesabını ve buluttaki keşiflerini kalıcı olarak silmek için SİL yaz.');
+  if (confirmation !== 'SİL') return;
+  try {
+    const sessionResult = await supabaseClient.auth.getSession();
+    const token = sessionResult.data?.session?.access_token;
+    if (!token) throw new Error('Oturum bulunamadı. Yeniden giriş yap.');
+    const response = await fetch('/api/account', {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Hesap silinemedi.');
+    const localRows = await dbGetAll();
+    for (const row of localRows) await dbDelete(row.id);
+    await supabaseClient.auth.signOut({ scope: 'local' });
+    toast('Hesabın ve bulut verilerin silindi.');
+  } catch (error) {
+    toast(error.message || 'Hesap silme işlemi tamamlanamadı.');
+  }
+});
+
 $('cloudSyncButton').addEventListener('click', () => syncCloudRecords(true));
 
 function switchTab(tab) {
