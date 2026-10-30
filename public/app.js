@@ -81,6 +81,7 @@ async function claimLegacyRecords() {
   const accepted=confirm(
     'Bu cihazda daha önce kaydedilmiş '+legacy.length+' keşif var. Bunları bu hesabına bağlayalım mı? Kabul edersen kayıtlar ve fotoğraflar hesabına özel bulut alanına yüklenir. Redd edersen yalnızca bu hesapta bu cihazda kalır; başka hesaplara gösterilmez.'
   );
+  legacyConsentPrompted=true;
   for(const row of legacy){
     row.ownerId=authUser.id;
     await putRawRecord(row);
@@ -179,7 +180,7 @@ async function syncCloudRecords(askConsent=false) {
       consent='yes';
       localStorage.setItem('mantar-cloud-sync-'+authUser.id,consent);
     }
-    if(localOnly.length&&consent!=='yes'&&askConsent){
+    if(localOnly.length&&consent!=='yes'&&askConsent&&!legacyConsentPrompted){
       const accepted=confirm(
         'Bu cihazda hesabına ait '+localOnly.length+' keşif kaydı var. Fotoğraflar, notlar ve isteğe bağlı konumlar güvenli bulut arşivine aktarılsın mı?'
       );
@@ -212,6 +213,7 @@ async function syncCloudRecords(askConsent=false) {
   }catch(error){
     toast('Bulut eşitlemesi tamamlanamadı: '+(error.message||'Bağlantı hatası.'));
   }finally{
+    legacyConsentPrompted=false;
     if(button)button.disabled=false;
   }
 }
@@ -220,6 +222,7 @@ let supabaseClient = null;
 let authUser = null;
 let accountAuthEnabled = false;
 let accountAuthMode = 'login';
+let legacyConsentPrompted = false;
 
 function showAccountOverlay(show) {
   $('loginOverlay').classList.toggle('hidden', !show);
