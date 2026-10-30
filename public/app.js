@@ -274,6 +274,10 @@ async function checkSession() {
         }
         if (event === 'SIGNED_OUT') {
           $('accountAuthMessage').textContent = 'Oturum kapatıldı.';
+          records=[];
+          updateCounts();
+          renderRecords();
+          if(mapInstance)renderMap();
         }
       });
       return;
