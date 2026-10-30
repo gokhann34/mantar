@@ -250,6 +250,8 @@ async function checkSession() {
     const config = await configResponse.json();
     if (config.accountAuthEnabled) {
       accountAuthEnabled = true;
+      $('loginForm').classList.add('hidden');
+      $('supabaseAuthPanel').classList.remove('hidden');
       if (!window.supabase || typeof window.supabase.createClient !== 'function') {
         throw new Error('Hesap servisi yüklenemedi. Sayfayı yenileyip tekrar dene.');
       }
