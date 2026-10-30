@@ -9,7 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const port = Number(process.env.PORT || 3000);
 const GEMINI_MODEL = (process.env.GEMINI_MODEL || 'gemini-3.8-flash').trim();
-const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\\/$/, '');
+const SUPABASE_URL = process.env.SUPABASE_URL ? new URL(process.env.SUPABASE_URL).origin : '';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 const ACCOUNT_AUTH_ENABLED = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 if (Boolean(SUPABASE_URL) !== Boolean(SUPABASE_ANON_KEY)) {
@@ -61,13 +61,13 @@ function isAuthenticated(req) {
 async function requireAuth(req, res, next) {
   if (ACCOUNT_AUTH_ENABLED) {
     const authorization = req.headers.authorization || '';
-    const match = authorization.match(/^Bearer\\s+(.+)$/i);
-    if (!match) return res.status(401).json({ error: 'Devam etmek için hesabına giriş yapmalısın.' });
+    const token = authorization.slice(0, 7).toLowerCase() === 'bearer ' ? authorization.slice(7).trim() : '';
+    if (!token) return res.status(401).json({ error: 'Devam etmek için hesabına giriş yapmalısın.' });
     try {
       const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
         headers: {
           apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${match[1]}`
+          Authorization: `Bearer ${token}`
         },
         signal: AbortSignal.timeout(10000)
       });
