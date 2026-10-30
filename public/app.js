@@ -151,7 +151,7 @@ function recordCard(record){
   const img=record.photos?.[0]?URL.createObjectURL(record.photos[0]):'';
   const card=document.createElement('article');card.className='record-card';
   const loc=record.location?'Konum kayıtlı':'Konum yok';
-  card.innerHTML=`<img class="record-thumb" alt="Keşif fotoğrafı" src="${img}"><div class="record-main"><b>${esc(firstName(record))}</b><small>${dateLabel(record.createdAt)} · ${loc}</small><span class="record-chip">${record.source==='packaged'?'Kültür mantarı':'Yabani örnek · tüketim onayı yok'}</span></div><div class="record-actions"><button class="tiny-action open-record">Aç</button><button class="tiny-action share-record">Paylaş</button></div>`;
+  card.innerHTML=`<img class="record-thumb" alt="Keşif fotoğrafı" src="${img}"><div class="record-main"><b>${esc(firstName(record))}</b><small>${dateLabel(record.createdAt)} · ${loc}</small><span class="record-chip">${record.source==='packaged'?'Kültür mantarı':'Yabani örnek · tüketim onayı yok'}</span>${record.note?`<p class="record-note">${esc(record.note)}</p>`:''}</div><div class="record-actions"><button class="tiny-action open-record">Aç</button><button class="tiny-action share-record">Paylaş</button></div>`;
   card.querySelector('.open-record').addEventListener('click',()=>showDetail(record.id));
   card.querySelector('.share-record').addEventListener('click',()=>shareLocation(record.id));
   return card;
@@ -162,21 +162,65 @@ function renderRecords(){
   const species=[...new Set(records.map(firstName))].sort((a,b)=>a.localeCompare(b,'tr'));
   const sel=$('speciesFilter');if(sel){const prior=sel.value;sel.innerHTML='<option value="all">Tüm türler</option>'+species.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('');if(species.includes(prior))sel.value=prior;}
   const filtered=records.filter(r=>{
-    const text=[firstName(r),r.analysis?.summary,r.analysis?.candidates?.[0]?.scientific_name].join(' ').toLocaleLowerCase('tr-TR');
+    const text=[firstName(r),r.analysis?.summary,r.analysis?.candidates?.[0]?.scientific_name,r.note].join(' ').toLocaleLowerCase('tr-TR');
     return (!query||text.includes(query))&&(filter==='all'||firstName(r)===filter);
-  }).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+  });
+  const sort=$('recordSort')?.value||'newest';
+  filtered.sort((a,b)=>sort==='oldest'?a.createdAt.localeCompare(b.createdAt):sort==='name'?firstName(a).localeCompare(firstName(b),'tr'):b.createdAt.localeCompare(a.createdAt));
   $('recordsList').innerHTML='';
   if(!filtered.length){$('recordsList').innerHTML='<div class="empty-state panel"><span>🍄</span><b>Gösterilecek keşif yok</b><small>Filtreyi değiştir veya yeni kayıt ekle.</small></div>';}
   filtered.forEach(r=>$('recordsList').append(recordCard(r)));
   $('recordsTotal').textContent=`${records.length} kayıt`;
 }
-$('recordSearch').addEventListener('input',renderRecords);$('speciesFilter').addEventListener('change',renderRecords);
+$('recordSearch').addEventListener('input',renderRecords);$('speciesFilter').addEventListener('change',renderRecords);$('recordSort').addEventListener('change',renderRecords);
+
+function blobToDataUrl(blob){
+  return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error);reader.readAsDataURL(blob);});
+}
+function dataUrlToBlob(dataUrl){
+  if(typeof dataUrl!=='string'||!dataUrl.startsWith('data:image/'))throw new Error('Yedekte geçersiz fotoğraf verisi var.');
+  const [header,data]=dataUrl.split(',');
+  const mime=header.match(/data:(.*?);base64/)?.[1]||'image/jpeg';
+  const binary=atob(data);const bytes=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+  return new Blob([bytes],{type:mime});
+}
+$('exportRecordsBtn').addEventListener('click',async()=>{
+  try{
+    const payload={app:'Mantar Dedektifi',formatVersion:1,exportedAt:new Date().toISOString(),records:[]};
+    for(const r of records){
+      payload.records.push({...r,photos:await Promise.all((r.photos||[]).map(blobToDataUrl))});
+    }
+    const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`mantar-dedektifi-yedek-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);
+    toast(`${records.length} kayıt yedeklendi.`);
+  }catch(err){toast('Yedek oluşturulamadı. Depolama alanını kontrol et.');}
+});
+$('importRecordsInput').addEventListener('change',async e=>{
+  const file=e.target.files?.[0];e.target.value='';if(!file)return;
+  if(file.size>100*1024*1024){toast('Yedek dosyası 100 MB sınırını aşıyor.');return;}
+  try{
+    const payload=JSON.parse(await file.text());
+    if(payload.app!=='Mantar Dedektifi'||payload.formatVersion!==1||!Array.isArray(payload.records))throw new Error('Bu dosya Mantar Dedektifi yedeği değil.');
+    if(!confirm(`${payload.records.length} kayıt yedekten içe aktarılacak. Aynı kimlikli kayıtlar güncellenecek; diğer kayıtlar korunacak. Devam edilsin mi?`))return;
+    let imported=0;
+    for(const raw of payload.records){
+      if(!raw||typeof raw.id!=='string'||!raw.analysis||!Array.isArray(raw.photos))continue;
+      const record={...raw,photos:raw.photos.map(dataUrlToBlob),note:typeof raw.note==='string'?raw.note.slice(0,2000):''};
+      await dbPut(record);imported++;
+    }
+    records=await dbGetAll();records.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));updateCounts();renderRecords();renderMap();
+    toast(`${imported} kayıt geri yüklendi.`);
+  }catch(err){toast(err.message||'Yedek dosyası okunamadı.');}
+});
 
 function showDetail(id){
   const r=records.find(x=>x.id===id);if(!r)return;
   const photoHtml=(r.photos||[]).map(blob=>`<img src="${URL.createObjectURL(blob)}" alt="Mantar fotoğrafı">`).join('');
   const candidates=(r.analysis?.candidates||[]).map(c=>`<p><b>${esc(c.common_name)}</b> <em>${esc(c.scientific_name)}</em></p>`).join('');
-  $('detailContent').innerHTML=`<div class="detail-photos">${photoHtml}</div><h3>${esc(firstName(r))}</h3><p class="detail-meta">${dateLabel(r.createdAt)} · ${r.source==='packaged'?'Paketli kültür mantarı':'Doğadan toplanmış yabani örnek'}</p><p class="detail-meta">${esc(r.analysis?.summary||'')}</p>${candidates}<div class="safety-lock">Bu uygulama tüketim güvenliği onayı vermez. Yabani mantarı tüketme.</div>${r.location?`<p class="detail-meta">Konum kayıtlı · ${r.location.lat.toFixed(5)}, ${r.location.lon.toFixed(5)}</p>`:'<p class="detail-meta">Bu kayıtta konum yok.</p>'}<div class="detail-buttons">${r.location?'<button id="detailShare" class="button primary">Konumu paylaş</button>':''}<button id="detailDelete" class="button secondary">Kaydı sil</button></div>`;
+  $('detailContent').innerHTML=`<div class="detail-photos">${photoHtml}</div><h3>${esc(firstName(r))}</h3><p class="detail-meta">${dateLabel(r.createdAt)} · ${r.source==='packaged'?'Paketli kültür mantarı':'Doğadan toplanmış yabani örnek'}</p><p class="detail-meta">${esc(r.analysis?.summary||'')}</p>${candidates}<label class="note-label" for="recordNoteInput">Kişisel not / gözlem</label><textarea id="recordNoteInput" class="note-input" maxlength="2000" placeholder="Örn. bulunduğu ağaç, hava durumu, koku, renk değişimi…">${esc(r.note||'')}</textarea><div class="note-actions"><small id="noteCharCount">0 / 2000</small><button id="saveNoteBtn" class="button primary">Notu kaydet</button></div><div class="safety-lock">Bu uygulama tüketim güvenliği onayı vermez. Yabani mantarı tüketme.</div>${r.location?`<p class="detail-meta">Konum kayıtlı · ${r.location.lat.toFixed(5)}, ${r.location.lon.toFixed(5)}</p>`:'<p class="detail-meta">Bu kayıtta konum yok.</p>'}<div class="detail-buttons">${r.location?'<button id="detailShare" class="button primary">Konumu paylaş</button>':''}<button id="detailDelete" class="button secondary">Kaydı sil</button></div>`;
+  const noteInput=$('recordNoteInput');const countNote=()=>{$('noteCharCount').textContent=`${noteInput.value.length} / 2000`;};countNote();noteInput.addEventListener('input',countNote);
+  $('saveNoteBtn').addEventListener('click',async()=>{r.note=noteInput.value.trim();try{await dbPut(r);records=await dbGetAll();updateCounts();renderRecords();toast('Not kaydedildi.');}catch{toast('Not kaydedilemedi.');}});
   if(r.location)$('detailShare').addEventListener('click',()=>shareLocation(id));
   $('detailDelete').addEventListener('click',async()=>{if(confirm('Bu keşif kaydını ve fotoğraflarını bu cihazdan silmek istiyor musun?')){await dbDelete(id);records=await dbGetAll();updateCounts();renderRecords();renderMap();$('detailDialog').close();toast('Kayıt silindi.');}});
   $('detailDialog').showModal();
