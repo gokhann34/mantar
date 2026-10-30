@@ -220,6 +220,13 @@ function setAccountSession(session) {
   } else if (accountAuthEnabled) {
     $('accountBar').classList.add('hidden');
     showAccountOverlay(true);
+    records=[];
+    if(db){
+      updateCounts();
+      renderRecords();
+      if(mapInstance)renderMap();
+      if(!$('statsView').classList.contains('hidden'))renderStats();
+    }
   }
 }
 function renderAccountAuthMode() {
@@ -271,12 +278,12 @@ async function checkSession() {
     }
     const response = await fetch('/api/session');
     const session = await response.json();
-    $('legacyAuthPanel').classList.toggle('hidden', !session.passwordRequired || session.authenticated);
+    $('loginForm').classList.toggle('hidden', !session.passwordRequired || session.authenticated);
     $('supabaseAuthPanel').classList.add('hidden');
     showAccountOverlay(session.passwordRequired && !session.authenticated);
   } catch (error) {
     $('supabaseAuthPanel').classList.toggle('hidden', !accountAuthEnabled);
-    $('legacyAuthPanel').classList.toggle('hidden', accountAuthEnabled);
+    $('loginForm').classList.toggle('hidden', accountAuthEnabled);
     showAccountOverlay(true);
     if (accountAuthEnabled) $('accountAuthMessage').textContent = error.message || 'Hesap sistemine ulaşılamadı.';
     else $('loginError').textContent = error.message || 'Giriş servisine ulaşılamadı.';
@@ -437,7 +444,14 @@ async function analyze(){
   const fd=new FormData();pendingFiles.forEach(file=>fd.append('photos',file,file.name));fd.append('source',selectedSource());
   $('loading').classList.remove('hidden');$('resultPanel').classList.add('hidden');$('analyzeBtn').disabled=true;
   try{
-    const response=await fetch('/api/analyze',{method:'POST',body:fd});
+    const headers={};
+    if(accountAuthEnabled){
+      const current=await supabaseClient.auth.getSession();
+      const accessToken=current.data?.session?.access_token;
+      if(!accessToken)throw new Error('Analiz için hesabına giriş yapmalısın.');
+      headers.Authorization='Bearer '+accessToken;
+    }
+    const response=await fetch('/api/analyze',{method:'POST',headers,body:fd});
     const data=await response.json();
     if(!response.ok)throw new Error(data.error||'Analiz başarısız.');
     pendingAnalysis=data.result;renderResult(data.result);
@@ -476,9 +490,15 @@ function renderResult(result){
 }
 async function saveRecord(){
   if(!pendingAnalysis){toast('Önce fotoğraf analizi yapmalısın.');return;}
-  const record={id:crypto.randomUUID(),createdAt:new Date().toISOString(),source:selectedSource(),analysis:pendingAnalysis,photos:pendingFiles.map(fileToBlob),location:pendingLocation?{...pendingLocation}:null};
-  try{await dbPut(record);records=await dbGetAll();updateCounts();renderRecords();toast('Keşif bu telefona kaydedildi.');switchTab('records');}
-  catch{toast('Kayıt saklanamadı. iPhone depolama alanını kontrol et.');}
+  const record={id:crypto.randomUUID(),createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),source:selectedSource(),analysis:pendingAnalysis,photos:pendingFiles.map(fileToBlob),location:pendingLocation?{...pendingLocation}:null};
+  try{
+    await dbPut(record);
+    if(accountAuthEnabled) {
+      try { await pushRecordToCloud({...record,ownerId:authUser.id}); toast('Keşfin hesabına ve bu cihaza kaydedildi.'); }
+      catch(error) { toast('Keşif cihazına kaydedildi; buluta yüklenemedi. Eşitle düğmesini kullan.'); }
+    } else toast('Keşif bu telefona kaydedildi.');
+    records=await dbGetAll();updateCounts();renderRecords();switchTab('records');
+  } catch(error) { toast(error.message||'Kayıt saklanamadı. Cihaz depolama alanını kontrol et.'); }
 }
 
 function recordCard(record){
@@ -554,10 +574,23 @@ function showDetail(id){
   const candidates=(r.analysis?.candidates||[]).map(c=>`<p><b>${esc(c.common_name)}</b> <em>${esc(c.scientific_name)}</em></p>`).join('');
   $('detailContent').innerHTML=`<div class="detail-photos">${photoHtml}</div><h3>${esc(firstName(r))}</h3><p class="detail-meta">${dateLabel(r.createdAt)} · ${r.source==='packaged'?'Paketli kültür mantarı':'Doğadan toplanmış yabani örnek'}</p><p class="detail-meta">${esc(r.analysis?.summary||'')}</p>${candidates}<label class="note-label" for="recordNoteInput">Kişisel not / gözlem</label><textarea id="recordNoteInput" class="note-input" maxlength="2000" placeholder="Örn. bulunduğu ağaç, hava durumu, koku, renk değişimi…">${esc(r.note||'')}</textarea><div class="note-actions"><small id="noteCharCount">0 / 2000</small><button id="saveNoteBtn" class="button primary">Notu kaydet</button></div><div class="safety-lock">Bu uygulama tüketim güvenliği onayı vermez. Yabani mantarı tüketme.</div>${r.location?`<p class="detail-meta">Konum kayıtlı · ${r.location.lat.toFixed(5)}, ${r.location.lon.toFixed(5)}</p>`:'<p class="detail-meta">Bu kayıtta konum yok.</p>'}<div class="detail-buttons"><button id="detailPdf" class="button primary">PDF raporu</button>${r.location?'<button id="detailShare" class="button primary">Konumu paylaş</button>':''}<button id="detailDelete" class="button secondary">Kaydı sil</button></div>`;
   const noteInput=$('recordNoteInput');const countNote=()=>{$('noteCharCount').textContent=`${noteInput.value.length} / 2000`;};countNote();noteInput.addEventListener('input',countNote);
-  $('saveNoteBtn').addEventListener('click',async()=>{r.note=noteInput.value.trim();try{await dbPut(r);records=await dbGetAll();updateCounts();renderRecords();toast('Not kaydedildi.');}catch{toast('Not kaydedilemedi.');}});
+  $('saveNoteBtn').addEventListener('click',async()=>{
+    r.note=noteInput.value.trim();r.updatedAt=new Date().toISOString();
+    try{
+      await dbPut(r);
+      if(accountAuthEnabled)await pushRecordToCloud(r);
+      records=await dbGetAll();updateCounts();renderRecords();toast(accountAuthEnabled?'Not ve kayıt bulutla eşitlendi.':'Not kaydedildi.');
+    }catch(error){toast(error.message||'Not kaydedilemedi veya buluta eşitlenemedi.');}
+  });
   $('detailPdf').addEventListener('click',()=>window.print());
   if(r.location)$('detailShare').addEventListener('click',()=>shareLocation(id));
-  $('detailDelete').addEventListener('click',async()=>{if(confirm('Bu keşif kaydını ve fotoğraflarını bu cihazdan silmek istiyor musun?')){await dbDelete(id);records=await dbGetAll();updateCounts();renderRecords();renderMap();$('detailDialog').close();toast('Kayıt silindi.');}});
+  $('detailDelete').addEventListener('click',async()=>{
+    if(!confirm('Bu keşif kaydını ve fotoğraflarını silmek istiyor musun? Hesabınla eşitlendiyse bulut arşivinden de silinir.'))return;
+    try{
+      if(accountAuthEnabled)await deleteCloudRecord(id);
+      await dbDelete(id);records=await dbGetAll();updateCounts();renderRecords();renderMap();$('detailDialog').close();toast('Kayıt silindi.');
+    }catch(error){toast(error.message||'Kayıt silinemedi.');}
+  });
   $('detailDialog').showModal();
 }
 $('closeDialog').addEventListener('click',()=>$('detailDialog').close());
@@ -620,8 +653,13 @@ $('installHint').addEventListener('click',()=>toast('Safari’de Paylaş düğme
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/service-worker.js').catch(()=>{}));
 
 (async()=>{
-  checkSession();
-  try{db=await openDB();records=await dbGetAll();records.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));updateCounts();renderRecords();}
-  catch{toast('Cihaz içi kayıt alanı açılamadı.');}
+  await checkSession();
+  try{
+    db=await openDB();
+    records=await dbGetAll();
+    records.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+    updateCounts();renderRecords();
+    if(accountAuthEnabled&&authUser)await syncCloudRecords(false);
+  }catch(error){toast(error.message||'Cihaz içi kayıt alanı açılamadı.');}
   renderPhotoGrid();
 })();
