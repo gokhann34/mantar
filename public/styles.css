@@ -60,3 +60,12 @@
  .detail-photos img{break-inside:avoid}
  .safety-lock{break-inside:avoid}
 }
+
+/* Voluntary TEMA support panel */
+.support-card{display:flex;gap:16px;align-items:flex-start;max-width:760px;margin:20px auto 16px;padding:18px 20px;background:#eef2e8;border:1px solid #dfe7d8;border-radius:20px}
+.support-icon{width:48px;height:48px;flex:0 0 48px;display:grid;place-items:center;background:#dfe9d9;border-radius:15px;font-size:25px}
+.support-copy{min-width:0;flex:1}
+.support-copy h2{font:24px/1.1 Georgia,serif;margin:6px 0 8px;color:var(--forest)}
+.support-copy p{font-size:11px;line-height:1.6;color:#58685b;margin:0 0 13px}
+.support-copy .button{display:inline-flex;flex:0 1 auto;min-height:42px}
+@media(max-width:520px){.support-card{margin:16px 0;padding:15px;gap:11px}.support-icon{width:40px;height:40px;flex-basis:40px;font-size:21px}.support-copy h2{font-size:21px}.support-copy .button{width:100%}}
