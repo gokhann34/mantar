@@ -28,7 +28,10 @@ Sunucuda `.env.example` dosyasını `.env` adıyla kopyala ve aşağıdaki deği
 GEMINI_API_KEY=YENI_GEMINI_ANAHTARINI_BURAYA
 GEMINI_MODEL=gemini-3.8-flash
 PORT=3000
-APP_PASSWORD=uzun-ve-tahmin-edilemez-bir-parola
+SUPABASE_URL=https://PROJECT_REF.supabase.co
+SUPABASE_ANON_KEY=SUPABASE_PUBLISHABLE_OR_ANON_KEY
+# Supabase hesabı açıldığında APP_PASSWORD artık kullanılmaz; geçiş dönemi için tutulabilir.
+APP_PASSWORD=eski-tek-parola-gecis-icin
 ```
 
 `GEMINI_API_KEY` sadece Node.js sunucusunda okunur. Tarayıcıdaki HTML/JavaScript dosyalarına eklenmez. Sunucu, anahtarı Gemini isteğinde `x-goog-api-key` HTTP başlığıyla gönderir. Varsayılan model `gemini-3.8-flash` olarak ayarlanmıştır; model erişimi ve kota Google AI Studio hesabına bağlıdır.
@@ -52,6 +55,26 @@ Gereksinim: Node.js 20 veya daha yeni sürüm.
 7. Sağlık kontrolü için `http://localhost:3000/api/health` adresini aç. `configured: true` ve `provider: "google-gemini"` görünmelidir.
 
 Anahtar olmadan arayüz açılır ancak görsel analiz endpoint'i 503 döndürür. Gerçek Gemini görsel analizi için geçerli API anahtarı ve Gemini API erişimi gerekir.
+
+## Çok kullanıcılı hesap sistemi (Supabase)
+
+Hesap sistemi açılmadan önce:
+
+1. Supabase'te bir proje oluştur.
+2. Project URL ve publishable/anon public key değerlerini al. **service_role / secret key değerini tarayıcıya veya GitHub'a kesinlikle koyma.**
+3. Supabase SQL Editor'de `supabase/migrations/20261031000100_multi_user_discoveries.sql` dosyasını çalıştır. Bu migration, kullanıcı kayıtlarını ve fotoğrafları `auth.uid()` ile sınırlar; fotoğraf deposu private olarak oluşturulur.
+4. Authentication → URL Configuration bölümünde Site URL değerini canlı uygulamanın HTTPS adresi yap. Redirect URL listesine `https://mantar-1.onrender.com/**` ekle (kendi domainin değişirse onu da ekle).
+5. Authentication → Providers → Email bölümünde e-posta girişini etkinleştir ve e-posta doğrulamasını açık tut. E-posta şablonları ve SMTP teslimatını gerçek kullanıcıya açmadan önce test et.
+6. Render → Environment bölümüne `SUPABASE_URL` ve `SUPABASE_ANON_KEY` ekle. `SUPABASE_ANON_KEY` yalnızca Supabase'in publishable/anon public key değeridir; service_role değildir.
+7. Yeni bir test hesabı oluştur. İki ayrı hesapla kayıtların, fotoğrafların ve konumların birbirinden ayrıldığını doğrulamadan herkese duyurma.
+
+Kullanıcı keşifleri kendi cihazında IndexedDB'de saklanmaya devam eder; giriş yapan kişi isterse eski cihaz kayıtlarını hesabına taşır. Bulut arşivinde tablo RLS kuralları ve private fotoğraf deposu kullanıcı sahipliğini zorunlu kılar. Hesapla giriş yapıldığında analiz API'si de Supabase erişim token'ını sunucu tarafında doğrular.
+
+E-posta doğrulama ve parola sıfırlama bağlantıları Supabase'in izin verilen redirect adreslerine bağlıdır. Supabase SMTP/teslimat ayarlarını yapmadan canlı kullanıcı kayıtlarını açma.
+
+## TEMA'ya doğrudan fidan bağışı
+
+Uygulama içindeki doğaya katkı bağlantısı kullanıcıyı doğrudan TEMA Vakfı'nın resmî fidan bağışı sayfasına yönlendirir. Uygulama bağış ödemesini işlemez, para tutmaz ve bağıştan komisyon almaz. Bağış tutarı, sertifika koşulları ve diğer seçenekler ödeme öncesi TEMA'nın kendi sayfasından kontrol edilmelidir.
 
 ## iPhone'a kurulum
 
