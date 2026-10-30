@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#173b2b" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Mantar Dedektifi" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="/styles.css" />
+  <title>Mantar Dedektifi</title>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><div class="brand-mark">✦</div><div><strong>Mantar Dedektifi</strong><span>Doğayı keşfet · güvenliği unutma</span></div></div>
+    <button id="installHint" class="icon-button" aria-label="Ana ekrana ekleme bilgisi">＋</button>
+  </header>
+
+  <div id="loginOverlay" class="login-overlay hidden">
+    <form id="loginForm" class="login-card panel">
+      <div class="login-icon">🍄</div><span class="eyebrow">ÖZEL KEŞİF DEFTERİ</span><h2>Tekrar hoş geldin</h2>
+      <p>Bu uygulama kişisel kullanım için parola ile korunur.</p>
+      <input id="appPassword" type="password" autocomplete="current-password" placeholder="Uygulama parolası" required />
+      <button class="button primary" type="submit">Giriş yap</button><small id="loginError"></small>
+    </form>
+  </div>
+  <main>
+    <section class="hero panel">
+      <div class="hero-copy"><span class="eyebrow">KİŞİSEL KEŞİF DEFTERİN</span><h1>Ormanın küçük<br><em>gizemlerini</em> keşfet.</h1><p>İki veya daha fazla açıdan fotoğraf yükle; ön inceleme al, keşiflerini haritanda sakla.</p></div>
+      <div class="hero-mushroom" aria-hidden="true">🍄</div>
+    </section>
+
+    <nav class="tabs" aria-label="Ana menü">
+      <button class="tab active" data-tab="analyze"> <span>⌕</span> Analiz</button>
+      <button class="tab" data-tab="map"><span>⌖</span> Haritam</button>
+      <button class="tab" data-tab="records"><span>▤</span> Kayıtlar <b id="recordCount">0</b></button>
+    </nav>
+
+    <section id="analyzeView" class="view active">
+      <div class="section-heading"><div><span class="eyebrow">01 / FOTOĞRAFLAR</span><h2>Örneği tanıyalım</h2></div><span class="pill">2–5 fotoğraf</span></div>
+      <div class="notice safety"><strong>⚠ Güvenlik uyarısı</strong><p>Fotoğraftan mantarın yenilebilir olduğu doğrulanamaz. Yabani mantarları tüketme; bu uygulama zehir güvenliği onayı vermez.</p></div>
+      <div class="upload-card panel">
+        <div class="upload-top"><div><strong>Farklı açılardan fotoğraf ekle</strong><small>Net, gün ışığında ve yakın çekim fotoğraflar seç.</small></div><div class="photo-counter"><b id="photoCount">0</b><span>/ 5</span></div></div>
+        <div class="angle-guide"><div><span>01</span><b>Üstten</b><small>Şapka görünümü</small></div><div><span>02</span><b>Alttan</b><small>Lamel / gözenek</small></div><div><span>03</span><b>Yan / dip</b><small>Sap ve taban</small></div></div>
+        <div id="photoGrid" class="photo-grid"><div class="empty-photo"><span>＋</span><b>Fotoğraf bekleniyor</b><small>En az iki farklı açı ekle</small></div></div>
+        <div class="upload-actions"><label class="button secondary" for="galleryInput">▧ Galeriden seç</label><input id="galleryInput" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple hidden /><label class="button primary" for="cameraInput">◎ Fotoğraf çek</label><input id="cameraInput" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment" hidden /></div>
+        <small class="microcopy">JPG, PNG, WebP veya iPhone HEIC/HEIF · Her fotoğraf en fazla 8 MB · En fazla 5 fotoğraf</small>
+      </div>
+
+      <div class="section-heading compact"><div><span class="eyebrow">02 / ÖRNEK BİLGİSİ</span><h2>Nereden buldun?</h2></div></div>
+      <div class="source-options panel">
+        <label class="source-choice selected"><input type="radio" name="source" value="wild" checked /><span class="source-icon">🌲</span><span><b>Doğadan topladım</b><small>Yabani mantar — tüketim uyarısı uygulanır.</small></span></label>
+        <label class="source-choice"><input type="radio" name="source" value="packaged" /><span class="source-icon">🧺</span><span><b>Market / paketli kültür mantarı</b><small>Tarif alanı yalnızca bu seçenekte açılır.</small></span></label>
+      </div>
+
+      <div class="section-heading compact"><div><span class="eyebrow">03 / KEŞİF KONUMU</span><h2>Bulduğun yeri kaydet</h2></div><span class="optional">İsteğe bağlı</span></div>
+      <div class="location-card panel"><div class="location-icon">⌖</div><div class="location-copy"><b id="locationTitle">Konum eklenmedi</b><small id="locationText">GPS yalnızca sen istediğinde alınır ve analiz servisine gönderilmez.</small></div><button id="getLocationBtn" class="button small secondary">Konum ekle</button></div>
+
+      <button id="analyzeBtn" class="button analyze-button" disabled><span>Fotoğrafları incele</span><span>→</span></button>
+      <p class="center microcopy" id="analysisHint">Devam etmek için en az 2 fotoğraf ekle.</p>
+      <div id="loading" class="loading panel hidden"><div class="spinner"></div><b>Fotoğraflar inceleniyor</b><span>Bu işlem birkaç saniye sürebilir.</span></div>
+      <section id="resultPanel" class="result-panel hidden"></section>
+    </section>
+
+    <section id="mapView" class="view hidden">
+      <div class="section-heading"><div><span class="eyebrow">KEŞİF NOKTALARI</span><h2>Mantar haritam</h2></div><span class="pill" id="mapCount">0 nokta</span></div>
+      <div class="notice"><strong>Konumların sana özel.</strong><p>Bu harita cihazında saklanan GPS kayıtlarını gösterir. Dış harita döşemeleri yüklenirken harita sağlayıcısı yaklaşık görüntülenen alanı görebilir.</p></div>
+      <div id="map" class="map panel"><div class="map-empty">Henüz konumlu keşif kaydın yok.<br/>Yeni analizde “Konum ekle” seçeneğini kullan.</div></div>
+      <div id="mapList" class="record-list"></div>
+    </section>
+
+    <section id="recordsView" class="view hidden">
+      <div class="section-heading"><div><span class="eyebrow">KİŞİSEL ARŞİV</span><h2>Keşif kayıtların</h2></div><span class="pill" id="recordsTotal">0 kayıt</span></div>
+      <div class="record-tools"><input id="recordSearch" class="search" type="search" placeholder="Tür veya not ara…"/><select id="speciesFilter" class="filter"><option value="all">Tüm türler</option></select></div>
+      <div id="recordsList" class="record-list"><div class="empty-state panel"><span>🍄</span><b>Henüz keşif kaydı yok</b><small>İlk analizini yaptıktan sonra burası dolacak.</small></div></div>
+    </section>
+  </main>
+
+  <footer><span>© Mantar Dedektifi</span><span>Fotoğraf tahmini ≠ tüketim onayı</span></footer>
+
+  <dialog id="detailDialog" class="detail-dialog"><div class="dialog-head"><b>Keşif ayrıntısı</b><button id="closeDialog" class="icon-button">✕</button></div><div id="detailContent"></div></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="/app.js" defer></script>
+</body>
+</html>

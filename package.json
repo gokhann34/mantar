@@ -1,0 +1,20 @@
+{
+  "name": "mantar-dedektifi",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "description": "iPhone uyumlu mantar keşif ve fotoğraf analiz PWA'sı; Google Gemini görsel analizi",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "check": "node --check server.js && node --check public/app.js && node --check public/service-worker.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1"
+  }
+}
