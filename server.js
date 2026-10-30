@@ -9,6 +9,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const port = Number(process.env.PORT || 3000);
 const GEMINI_MODEL = (process.env.GEMINI_MODEL || 'gemini-3.8-flash').trim();
+const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\\/$/, '');
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
+const ACCOUNT_AUTH_ENABLED = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+if (Boolean(SUPABASE_URL) !== Boolean(SUPABASE_ANON_KEY)) {
+  throw new Error('Hesap sistemi için SUPABASE_URL ve SUPABASE_ANON_KEY birlikte tanımlanmalı.');
+}
 if (!/^[a-zA-Z0-9._-]+$/.test(GEMINI_MODEL)) {
   throw new Error('GEMINI_MODEL geçersiz. Yalnızca model adı kullanın.');
 }
@@ -28,8 +34,8 @@ const upload = multer({
 });
 
 app.disable('x-powered-by');
-if (process.env.NODE_ENV === 'production' && !process.env.APP_PASSWORD) {
-  throw new Error('Production ortamında APP_PASSWORD tanımlanmalı.');
+if (process.env.NODE_ENV === 'production' && !process.env.APP_PASSWORD && !ACCOUNT_AUTH_ENABLED) {
+  throw new Error('Production ortamında Supabase hesap sistemi veya APP_PASSWORD yapılandırılmalı.');
 }
 const sessions = new Map();
 const attempts = new Map();
@@ -52,7 +58,32 @@ function isAuthenticated(req) {
   }
   return true;
 }
-function requireAuth(req, res, next) {
+async function requireAuth(req, res, next) {
+  if (ACCOUNT_AUTH_ENABLED) {
+    const authorization = req.headers.authorization || '';
+    const match = authorization.match(/^Bearer\\s+(.+)$/i);
+    if (!match) return res.status(401).json({ error: 'Devam etmek için hesabına giriş yapmalısın.' });
+    try {
+      const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${match[1]}`
+        },
+        signal: AbortSignal.timeout(10000)
+      });
+      if (response.status === 401 || response.status === 403) {
+        return res.status(401).json({ error: 'Oturumun geçersiz veya süresi dolmuş. Yeniden giriş yap.' });
+      }
+      if (!response.ok) {
+        return res.status(503).json({ error: 'Hesap doğrulama servisine şu anda ulaşılamıyor.' });
+      }
+      req.user = await response.json();
+      if (!req.user?.id) return res.status(401).json({ error: 'Hesap doğrulanamadı.' });
+      return next();
+    } catch {
+      return res.status(503).json({ error: 'Hesap doğrulama servisine bağlanılamadı.' });
+    }
+  }
   if (!isAuthenticated(req)) return res.status(401).json({ error: 'Oturum açmalısın.' });
   next();
 }
@@ -83,16 +114,29 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
 app.use(express.json({ limit: '32kb' }));
 
+app.get('/api/config', (_req, res) => {
+  res.json({
+    accountAuthEnabled: ACCOUNT_AUTH_ENABLED,
+    supabaseUrl: ACCOUNT_AUTH_ENABLED ? SUPABASE_URL : null,
+    supabaseAnonKey: ACCOUNT_AUTH_ENABLED ? SUPABASE_ANON_KEY : null
+  });
+});
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
     configured: Boolean(process.env.GEMINI_API_KEY),
-    protected: Boolean(process.env.APP_PASSWORD),
+    protected: ACCOUNT_AUTH_ENABLED || Boolean(process.env.APP_PASSWORD),
+    accountAuthEnabled: ACCOUNT_AUTH_ENABLED,
     provider: 'google-gemini',
     model: GEMINI_MODEL
   });
 });
-app.get('/api/session', (req, res) => res.json({ authenticated: isAuthenticated(req), passwordRequired: Boolean(process.env.APP_PASSWORD) }));
+app.get('/api/session', (req, res) => {
+  if (ACCOUNT_AUTH_ENABLED) {
+    return res.json({ accountAuthEnabled: true, authenticated: false, passwordRequired: false });
+  }
+  res.json({ accountAuthEnabled: false, authenticated: isAuthenticated(req), passwordRequired: Boolean(process.env.APP_PASSWORD) });
+});
 app.post('/api/login', (req, res) => {
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
   if (tooManyAttempts(ip)) return res.status(429).json({ error: 'Çok fazla deneme yapıldı. 10 dakika sonra tekrar dene.' });
