@@ -37,6 +37,7 @@
       <button class="tab active" data-tab="analyze"> <span>⌕</span> Analiz</button>
       <button class="tab" data-tab="map"><span>⌖</span> Haritam</button>
       <button class="tab" data-tab="records"><span>▤</span> Kayıtlar <b id="recordCount">0</b></button>
+      <button class="tab" data-tab="stats"><span>▥</span> İstatistik</button>
       <button class="tab" data-tab="encyclopedia"><span>✧</span> Tür rehberi</button>
     </nav>
 
@@ -89,6 +90,15 @@
       <div class="archive-actions"><button id="exportRecordsBtn" class="button secondary">⬇ Yedek indir</button><label class="button secondary" for="importRecordsInput">⬆ Yedek geri yükle</label><input id="importRecordsInput" type="file" accept="application/json,.json" hidden /></div>
       <p class="microcopy archive-hint">Yedek dosyası kayıtlarını, notlarını, konumlarını ve fotoğraflarını içerir. Dosyayı güvenli bir yerde sakla.</p>
       <div id="recordsList" class="record-list"><div class="empty-state panel"><span>🍄</span><b>Henüz keşif kaydı yok</b><small>İlk analizini yaptıktan sonra burası dolacak.</small></div></div>
+    </section>
+    <section id="statsView" class="view hidden">
+      <div class="section-heading"><div><span class="eyebrow">KEŞİF ÖZETİ</span><h2>İstatistiklerin</h2></div><span class="pill">Yalnızca bu cihaz</span></div>
+      <div class="notice"><strong>Özel ve yerel analiz.</strong><p>İstatistikler kayıtlı keşiflerinden hesaplanır; verilerin bir sunucuya gönderilmez. Tür adları yalnızca yapay zekâ tahminidir, doğrulanmış teşhis değildir.</p></div>
+      <div id="statsSummary" class="stats-summary"></div>
+      <div class="stats-panel panel"><div class="stats-heading"><h3>Aylara göre keşifler</h3><small>Son 6 ay</small></div><div id="monthlyStats" class="monthly-stats"></div></div>
+      <div class="stats-panel panel"><div class="stats-heading"><h3>En sık kaydedilen tahminler</h3><small>En fazla 5</small></div><div id="speciesStats" class="bar-stats"></div></div>
+      <div class="stats-panel panel"><div class="stats-heading"><h3>Kayıt kaynakları</h3></div><div id="sourceStats" class="source-stats"></div></div>
+      <p id="statsFootnote" class="microcopy">İstatistikler cihazındaki mevcut kayıtlar üzerinden hesaplanır.</p>
     </section>
     <section id="encyclopediaView" class="view hidden">
       <div class="section-heading"><div><span class="eyebrow">SAHA REHBERİ</span><h2>Mantar türleri rehberi</h2></div><span class="pill">Eğitim amaçlı</span></div>
