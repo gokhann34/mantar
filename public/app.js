@@ -79,12 +79,13 @@ async function claimLegacyRecords() {
   const legacy=all.filter(row=>!row.ownerId);
   if(!legacy.length)return;
   const accepted=confirm(
-    'Bu cihazda daha önce kaydedilmiş '+legacy.length+' keşif var. Bunları yalnızca senin hesabına aktaralım mı? Kabul edersen kayıtlar ve fotoğraflar hesabına özel bulut alanına yüklenir. Redd edersen kayıtlar bu cihazda yerel olarak kalır ve başka hesaplara gösterilmez.'
+    'Bu cihazda daha önce kaydedilmiş '+legacy.length+' keşif var. Bunları bu hesabına bağlayalım mı? Kabul edersen kayıtlar ve fotoğraflar hesabına özel bulut alanına yüklenir. Redd edersen yalnızca bu hesapta bu cihazda kalır; başka hesaplara gösterilmez.'
   );
   for(const row of legacy){
-    row.ownerId=accepted?authUser.id:'legacy-local-only';
+    row.ownerId=authUser.id;
     await putRawRecord(row);
   }
+  localStorage.setItem('mantar-cloud-sync-'+authUser.id,accepted?'yes':'no');
 }
 async function pushRecordToCloud(record) {
   if(!authUser||!supabaseClient)throw new Error('Hesap oturumu bulunamadı.');
@@ -677,7 +678,7 @@ if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.ser
     records=await dbGetAll();
     records.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
     updateCounts();renderRecords();
-    if(accountAuthEnabled&&authUser)await syncCloudRecords(false);
+    if(accountAuthEnabled&&authUser)await syncCloudRecords(true);
   }catch(error){toast(error.message||'Cihaz içi kayıt alanı açılamadı.');}
   renderPhotoGrid();
 })();
