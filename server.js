@@ -171,7 +171,6 @@ app.post('/api/analyze', requireAuth, (req, res, next) => {
       body: JSON.stringify({
         contents: [{ role: 'user', parts }],
         generationConfig: {
-          temperature: 0.15,
           maxOutputTokens: 2000,
           responseMimeType: 'application/json'
         }
