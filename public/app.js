@@ -30,15 +30,174 @@ function dateLabel(value) { return new Intl.DateTimeFormat('tr-TR',{dateStyle:'m
 function firstName(record) { return record.analysis?.candidates?.[0]?.common_name || 'Tanımlanamayan örnek'; }
 function fileToBlob(file) { return file.slice(0, file.size, file.type); }
 
-async function checkSession(){
-  try{const r=await fetch('/api/session');const s=await r.json();if(s.passwordRequired&&!s.authenticated)$('loginOverlay').classList.remove('hidden');}
-  catch{$('loginOverlay').classList.add('hidden');}
+let supabaseClient = null;
+let authUser = null;
+let accountAuthEnabled = false;
+let accountAuthMode = 'login';
+
+function showAccountOverlay(show) {
+  $('loginOverlay').classList.toggle('hidden', !show);
 }
-$('loginForm').addEventListener('submit',async e=>{
-  e.preventDefault();$('loginError').textContent='';
-  try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:$('appPassword').value})});const data=await r.json();if(!r.ok)throw new Error(data.error||'Giriş başarısız.');$('loginOverlay').classList.add('hidden');$('appPassword').value='';toast('Giriş yapıldı.');}
-  catch(err){$('loginError').textContent=err.message;}
+function setAccountSession(session) {
+  authUser = session && session.user ? session.user : null;
+  if (authUser) {
+    showAccountOverlay(false);
+    $('accountBar').classList.remove('hidden');
+    $('accountIdentity').textContent = authUser.email || 'Hesabım';
+  } else if (accountAuthEnabled) {
+    $('accountBar').classList.add('hidden');
+    showAccountOverlay(true);
+  }
+}
+function renderAccountAuthMode() {
+  const signup = accountAuthMode === 'signup';
+  $('accountAuthTitle').textContent = signup ? 'Yeni hesap oluştur' : 'Hesabına giriş yap';
+  $('accountAuthDescription').textContent = signup
+    ? 'E-postanı doğrula ve keşiflerini hesabında sakla.'
+    : 'Keşiflerine farklı cihazlardan güvenle eriş.';
+  $('accountAuthSubmit').textContent = signup ? 'Hesap oluştur' : 'Giriş yap';
+  $('accountAuthToggle').textContent = signup ? 'Zaten hesabım var' : 'Yeni hesap oluştur';
+  $('accountForgotPassword').classList.toggle('hidden', signup);
+  $('accountPasswordInput').autocomplete = signup ? 'new-password' : 'current-password';
+  $('accountAuthMessage').textContent = '';
+  $('accountAuthForm').classList.remove('hidden');
+  $('accountRecoveryForm').classList.add('hidden');
+}
+async function checkSession() {
+  try {
+    const configResponse = await fetch('/api/config');
+    if (!configResponse.ok) throw new Error('Uygulama yapılandırması alınamadı.');
+    const config = await configResponse.json();
+    if (config.accountAuthEnabled) {
+      accountAuthEnabled = true;
+      if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+        throw new Error('Hesap servisi yüklenemedi. Sayfayı yenileyip tekrar dene.');
+      }
+      supabaseClient = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+      });
+      const result = await supabaseClient.auth.getSession();
+      if (result.error) throw result.error;
+      setAccountSession(result.data.session);
+      renderAccountAuthMode();
+      supabaseClient.auth.onAuthStateChange((event, session) => {
+        setAccountSession(session);
+        if (event === 'PASSWORD_RECOVERY') {
+          $('accountAuthTitle').textContent = 'Yeni parola belirle';
+          $('accountAuthDescription').textContent = 'Hesabın için yeni ve güçlü bir parola seç.';
+          $('accountAuthForm').classList.add('hidden');
+          document.querySelector('.auth-actions').classList.add('hidden');
+          $('accountRecoveryForm').classList.remove('hidden');
+          showAccountOverlay(true);
+        }
+        if (event === 'SIGNED_OUT') {
+          $('accountAuthMessage').textContent = 'Oturum kapatıldı.';
+        }
+      });
+      return;
+    }
+    const response = await fetch('/api/session');
+    const session = await response.json();
+    $('legacyAuthPanel').classList.toggle('hidden', !session.passwordRequired || session.authenticated);
+    $('supabaseAuthPanel').classList.add('hidden');
+    showAccountOverlay(session.passwordRequired && !session.authenticated);
+  } catch (error) {
+    $('supabaseAuthPanel').classList.toggle('hidden', !accountAuthEnabled);
+    $('legacyAuthPanel').classList.toggle('hidden', accountAuthEnabled);
+    showAccountOverlay(true);
+    if (accountAuthEnabled) $('accountAuthMessage').textContent = error.message || 'Hesap sistemine ulaşılamadı.';
+    else $('loginError').textContent = error.message || 'Giriş servisine ulaşılamadı.';
+  }
+}
+$('accountAuthToggle').addEventListener('click', () => {
+  accountAuthMode = accountAuthMode === 'login' ? 'signup' : 'login';
+  renderAccountAuthMode();
 });
+$('accountAuthForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  $('accountAuthMessage').textContent = '';
+  const email = $('accountEmailInput').value.trim();
+  const password = $('accountPasswordInput').value;
+  try {
+    let result;
+    if (accountAuthMode === 'signup') {
+      result = await supabaseClient.auth.signUp({
+        email, password,
+        options: { emailRedirectTo: window.location.origin }
+      });
+      if (result.error) throw result.error;
+      if (result.data.session) {
+        setAccountSession(result.data.session);
+        if (db) await syncCloudRecords(true);
+      } else {
+        $('accountAuthMessage').textContent = 'Kayıt talebin alındı. E-posta adresine gelen doğrulama bağlantısına tıkla.';
+      }
+    } else {
+      result = await supabaseClient.auth.signInWithPassword({ email, password });
+      if (result.error) throw result.error;
+      setAccountSession(result.data.session);
+      if (db) await syncCloudRecords(true);
+      toast('Hesabına giriş yapıldı.');
+    }
+  } catch (error) {
+    $('accountAuthMessage').textContent = error.message || 'İşlem tamamlanamadı.';
+  }
+});
+$('accountForgotPassword').addEventListener('click', async () => {
+  const email = $('accountEmailInput').value.trim();
+  if (!email) {
+    $('accountAuthMessage').textContent = 'Önce e-posta adresini yaz.';
+    return;
+  }
+  try {
+    const result = await supabaseClient.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin
+    });
+    if (result.error) throw result.error;
+    $('accountAuthMessage').textContent = 'Parola yenileme bağlantısı e-posta adresine gönderildi.';
+  } catch (error) {
+    $('accountAuthMessage').textContent = error.message || 'Parola yenileme isteği gönderilemedi.';
+  }
+});
+$('accountRecoveryForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  try {
+    const result = await supabaseClient.auth.updateUser({ password: $('accountNewPassword').value });
+    if (result.error) throw result.error;
+    $('accountAuthMessage').textContent = 'Parolan güncellendi. Şimdi yeni parolanla giriş yapabilirsin.';
+    $('accountNewPassword').value = '';
+    await supabaseClient.auth.signOut();
+    document.querySelector('.auth-actions').classList.remove('hidden');
+    accountAuthMode = 'login';
+    renderAccountAuthMode();
+  } catch (error) {
+    $('accountAuthMessage').textContent = error.message || 'Parola güncellenemedi.';
+  }
+});
+$('loginForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  $('loginError').textContent = '';
+  try {
+    const response = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: $('appPassword').value })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Giriş başarısız.');
+    showAccountOverlay(false);
+    $('appPassword').value = '';
+    toast('Giriş yapıldı.');
+  } catch (error) {
+    $('loginError').textContent = error.message;
+  }
+});
+$('accountLogout').addEventListener('click', async () => {
+  if (!supabaseClient) return;
+  const result = await supabaseClient.auth.signOut();
+  if (result.error) toast('Oturum kapatılamadı: ' + result.error.message);
+});
+$('cloudSyncButton').addEventListener('click', () => syncCloudRecords(true));
 
 function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
