@@ -39,3 +39,24 @@
 .note-actions small{font-size:10px;color:var(--muted)}
 .note-actions .button{flex:0 0 auto}
 @media(max-width:480px){.record-tools>*{flex:1 1 100%;max-width:none!important}.archive-actions>*{flex:1 1 45%}.record-card{gap:8px;padding:8px}.record-thumb{width:54px;height:54px}.record-actions .tiny-action{padding:7px 6px}}
+
+/* Species guide and printable discovery reports */
+.encyclopedia-search{width:100%;margin:12px 0}
+.encyclopedia-list{display:grid;gap:12px;margin-top:10px}
+.guide-card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:16px}
+.guide-card h3{font:21px Georgia,serif;color:var(--forest);margin:8px 0 4px}
+.guide-card em{font-size:11px;color:var(--muted)}
+.guide-card>p{font-size:11px;line-height:1.6;color:#536154}
+.guide-caution{background:#fbf0e8;border:1px solid #efdbcd;border-radius:11px;padding:11px;margin-top:12px;color:#803b2d}
+.guide-caution b{font-size:11px}.guide-caution p{font-size:10px;line-height:1.5;margin:5px 0 0}
+.detail-buttons{flex-wrap:wrap}.detail-buttons .button{flex:1 1 120px}
+@media print{
+ body{background:white!important;padding:0!important}
+ body>*{visibility:hidden!important}
+ #detailDialog[open],#detailDialog[open] *{visibility:visible!important}
+ #detailDialog[open]{position:absolute!important;inset:0!important;width:100%!important;max-width:none!important;max-height:none!important;overflow:visible!important;border:0!important;border-radius:0!important;box-shadow:none!important}
+ .dialog-head,#closeDialog,#saveNoteBtn,#detailDelete,#detailShare,#detailPdf,.note-actions{display:none!important}
+ #detailContent{padding:0!important}
+ .detail-photos img{break-inside:avoid}
+ .safety-lock{break-inside:avoid}
+}
