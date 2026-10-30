@@ -23,9 +23,45 @@ function openDB() {
   });
 }
 function tx(mode='readonly') { return db.transaction('records', mode).objectStore('records'); }
-function dbGetAll() { return new Promise((resolve,reject)=>{const r=tx().getAll();r.onsuccess=()=>resolve(r.result||[]);r.onerror=()=>reject(r.error);}); }
-function dbPut(value) { return new Promise((resolve,reject)=>{const r=tx('readwrite').put(value);r.onsuccess=()=>resolve();r.onerror=()=>reject(r.error);}); }
-function dbDelete(id) { return new Promise((resolve,reject)=>{const r=tx('readwrite').delete(id);r.onsuccess=()=>resolve();r.onerror=()=>reject(r.error);}); }
+function dbGetAllRaw() {
+  return new Promise((resolve,reject)=>{
+    const request=tx().getAll();
+    request.onsuccess=()=>resolve(request.result||[]);
+    request.onerror=()=>reject(request.error);
+  });
+}
+async function dbGetAll() {
+  const rows=await dbGetAllRaw();
+  if(!accountAuthEnabled)return rows;
+  if(!authUser)return [];
+  return rows.filter(row=>row.ownerId===authUser.id);
+}
+function dbPut(value) {
+  const row=accountAuthEnabled&&authUser?{...value,ownerId:authUser.id}:value;
+  if(accountAuthEnabled&&!authUser)return Promise.reject(new Error('Kayıt için hesabına giriş yapmalısın.'));
+  return new Promise((resolve,reject)=>{
+    const request=tx('readwrite').put(row);
+    request.onsuccess=()=>resolve();
+    request.onerror=()=>reject(request.error);
+  });
+}
+function dbDelete(id) {
+  return new Promise((resolve,reject)=>{
+    const store=tx('readwrite');
+    const read=store.get(id);
+    read.onerror=()=>reject(read.error);
+    read.onsuccess=()=>{
+      const row=read.result;
+      if(!row||(accountAuthEnabled&&(!authUser||row.ownerId!==authUser.id))){
+        reject(new Error('Bu kaydı silme yetkin yok.'));
+        return;
+      }
+      const remove=store.delete(id);
+      remove.onsuccess=()=>resolve();
+      remove.onerror=()=>reject(remove.error);
+    };
+  });
+}
 function dateLabel(value) { return new Intl.DateTimeFormat('tr-TR',{dateStyle:'medium',timeStyle:'short'}).format(new Date(value)); }
 function firstName(record) { return record.analysis?.candidates?.[0]?.common_name || 'Tanımlanamayan örnek'; }
 function fileToBlob(file) { return file.slice(0, file.size, file.type); }
