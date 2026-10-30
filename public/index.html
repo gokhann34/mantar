@@ -84,7 +84,9 @@
 
     <section id="recordsView" class="view hidden">
       <div class="section-heading"><div><span class="eyebrow">KİŞİSEL ARŞİV</span><h2>Keşif kayıtların</h2></div><span class="pill" id="recordsTotal">0 kayıt</span></div>
-      <div class="record-tools"><input id="recordSearch" class="search" type="search" placeholder="Tür veya not ara…"/><select id="speciesFilter" class="filter"><option value="all">Tüm türler</option></select></div>
+      <div class="record-tools"><input id="recordSearch" class="search" type="search" placeholder="Tür, not veya gözlem ara…"/><select id="speciesFilter" class="filter"><option value="all">Tüm türler</option></select><select id="recordSort" class="filter" aria-label="Kayıt sıralama"><option value="newest">En yeni</option><option value="oldest">En eski</option><option value="name">Tür adına göre</option></select></div>
+      <div class="archive-actions"><button id="exportRecordsBtn" class="button secondary">⬇ Yedek indir</button><label class="button secondary" for="importRecordsInput">⬆ Yedek geri yükle</label><input id="importRecordsInput" type="file" accept="application/json,.json" hidden /></div>
+      <p class="microcopy archive-hint">Yedek dosyası kayıtlarını, notlarını, konumlarını ve fotoğraflarını içerir. Dosyayı güvenli bir yerde sakla.</p>
       <div id="recordsList" class="record-list"><div class="empty-state panel"><span>🍄</span><b>Henüz keşif kaydı yok</b><small>İlk analizini yaptıktan sonra burası dolacak.</small></div></div>
     </section>
   </main>
