@@ -42,9 +42,10 @@ $('loginForm').addEventListener('submit',async e=>{
 
 function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
-  ['analyze','map','records','encyclopedia'].forEach(name=>$(name+'View').classList.toggle('hidden',name!==tab));
+  ['analyze','map','records','stats','encyclopedia'].forEach(name=>$(name+'View').classList.toggle('hidden',name!==tab));
   if(tab==='map') setTimeout(renderMap,80);
   if(tab==='records') renderRecords();
+  if(tab==='stats') renderStats();
 }
 document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
 $('encyclopediaSearch').addEventListener('input',()=>{const q=$('encyclopediaSearch').value.trim().toLocaleLowerCase('tr-TR');document.querySelectorAll('.guide-card').forEach(card=>card.classList.toggle('hidden',!card.textContent.toLocaleLowerCase('tr-TR').includes(q)));});
@@ -239,6 +240,32 @@ async function shareLocation(id){
 function updateCounts(){
   $('recordCount').textContent=records.length;$('mapCount').textContent=`${records.filter(r=>r.location).length} nokta`;
   $('recordsTotal').textContent=`${records.length} kayıt`;
+}
+function renderStats(){
+  const total=records.length;
+  const withLocation=records.filter(r=>r.location).length;
+  const species=new Map();
+  records.forEach(r=>{const name=firstName(r);species.set(name,(species.get(name)||0)+1);});
+  const top=[...species.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],'tr')).slice(0,5);
+  const firstSeen=records.length?records.reduce((min,r)=>r.createdAt<min?r.createdAt:min,records[0].createdAt):null;
+  const months=[];
+  const now=new Date();
+  for(let offset=5;offset>=0;offset--){
+    const d=new Date(now.getFullYear(),now.getMonth()-offset,1);
+    const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    months.push({key,label:new Intl.DateTimeFormat('tr-TR',{month:'short'}).format(d),count:records.filter(r=>{const x=new Date(r.createdAt);return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}`===key;}).length});
+  }
+  const maxMonth=Math.max(1,...months.map(m=>m.count));
+  $('statsSummary').innerHTML=[
+    ['Toplam keşif',total,'📒'],['Konumlu kayıt',withLocation,'📍'],['Farklı tahmin',species.size,'🍄'],['Konum oranı',total?`${Math.round(withLocation/total*100)}%`:'—','🧭']
+  ].map(([label,value,icon])=>`<article class="stat-card panel"><span>${icon}</span><small>${label}</small><b>${value}</b></article>`).join('');
+  $('monthlyStats').innerHTML=months.map(m=>`<div class="month-bar"><div class="month-bar-track"><span style="height:${m.count?Math.max(8,m.count/maxMonth*100):0}%"></span></div><b>${m.count}</b><small>${esc(m.label)}</small></div>`).join('');
+  $('speciesStats').innerHTML=top.length?top.map(([name,count])=>`<div class="stat-row"><div class="stat-row-label"><span>${esc(name)}</span><b>${count}</b></div><div class="stat-track"><span style="width:${count/Math.max(1,top[0][1])*100}%"></span></div></div>`).join(''):'<p class="stats-empty">Henüz kayıt yok. İlk keşfini analiz edip kaydettiğinde istatistiklerin burada görünecek.</p>';
+  const wild=records.filter(r=>r.source!=='packaged').length;
+  const packaged=records.filter(r=>r.source==='packaged').length;
+  const sourceTotal=Math.max(1,total);
+  $('sourceStats').innerHTML=`<div class="source-stat"><div><span class="source-dot wild"></span>Doğadan kaydedilen</div><b>${wild} · ${Math.round(wild/sourceTotal*100)}%</b></div><div class="source-stat"><div><span class="source-dot packaged"></span>Paketli kültür mantarı</div><b>${packaged} · ${Math.round(packaged/sourceTotal*100)}%</b></div><div class="source-track"><span class="wild" style="width:${wild/sourceTotal*100}%"></span><span class="packaged" style="width:${packaged/sourceTotal*100}%"></span></div>`;
+  $('statsFootnote').textContent=firstSeen?`İlk kayıt: ${dateLabel(firstSeen)}. Veriler bu tarayıcıdaki kayıtlarından hesaplandı; tür tahminleri kesin teşhis değildir.`:'İstatistikler, bu cihazda kayıt oluşturduğunda otomatik hesaplanır.';
 }
 function renderMap(){
   const withLocation=records.filter(r=>r.location);
