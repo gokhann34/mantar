@@ -445,16 +445,43 @@ function switchTab(tab) {
 document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
 $('encyclopediaSearch').addEventListener('input',()=>{const q=$('encyclopediaSearch').value.trim().toLocaleLowerCase('tr-TR');document.querySelectorAll('.guide-card').forEach(card=>card.classList.toggle('hidden',!card.textContent.toLocaleLowerCase('tr-TR').includes(q)));});
 
+async function inspectPhotoQuality(files) {
+  const warnings = [];
+  for (const file of files) {
+    if (file.size < 100 * 1024) {
+      warnings.push(`${file.name}: dosya boyutu çok küçük; görüntü ayrıntısı yetersiz olabilir.`);
+      continue;
+    }
+    if (typeof createImageBitmap === 'function' && !['image/heic','image/heif'].includes(file.type)) {
+      try {
+        const bitmap = await createImageBitmap(file);
+        if (Math.min(bitmap.width, bitmap.height) < 700) {
+          warnings.push(`${file.name}: çözünürlük düşük (${bitmap.width}×${bitmap.height}); daha net fotoğraf çek.`);
+        }
+        bitmap.close?.();
+      } catch {
+        // Some mobile browsers cannot decode every image format for local inspection.
+      }
+    }
+  }
+  if (warnings.length) {
+    toast('Fotoğraf kalitesi uyarısı: ' + warnings.slice(0, 2).join(' '));
+  }
+}
+
 function addFiles(list) {
   const incoming = [...list];
+  const accepted = [];
   for (const file of incoming) {
     if (!file.type.startsWith('image/')) continue;
     if (pendingFiles.length >= 5) { toast('En fazla 5 fotoğraf ekleyebilirsin.'); break; }
     if (file.size > 8*1024*1024) { toast(`${file.name}: 8 MB sınırını aşıyor.`); continue; }
     if (!['image/jpeg','image/png','image/webp','image/heic','image/heif'].includes(file.type)) { toast('JPG, PNG, WebP veya iPhone HEIC/HEIF fotoğrafı kullan.'); continue; }
     pendingFiles.push(file);
+    accepted.push(file);
   }
   renderPhotoGrid();
+  if (accepted.length) void inspectPhotoQuality(accepted);
 }
 $('galleryInput').addEventListener('change', e=>{addFiles(e.target.files);e.target.value='';});
 $('cameraInput').addEventListener('change', e=>{addFiles(e.target.files);e.target.value='';});
