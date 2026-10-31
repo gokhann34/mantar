@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
 
-const port = 24000 + Math.floor(Math.random() * 20000);
+const port = 24000 + Math.floor(Math.random() * 15000);
 const baseUrl = `http://127.0.0.1:${port}`;
 
 function launchServer(extraEnv = {}) {
