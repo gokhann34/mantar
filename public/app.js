@@ -221,6 +221,7 @@ async function syncCloudRecords(askConsent=false) {
 let supabaseClient = null;
 let authUser = null;
 let accountAuthEnabled = false;
+let accountConfigVerified = false;
 let accountAuthMode = 'login';
 let legacyConsentPrompted = false;
 
@@ -264,6 +265,13 @@ async function checkSession() {
     const configResponse = await fetch('/api/config');
     if (!configResponse.ok) throw new Error('Uygulama yapılandırması alınamadı.');
     const config = await configResponse.json();
+    if (!config || typeof config.accountAuthEnabled !== 'boolean') {
+      throw new Error('Uygulama hesap yapılandırması geçersiz.');
+    }
+    if (config.accountAuthEnabled && (!config.supabaseUrl || !config.supabaseAnonKey)) {
+      throw new Error('Hesap sistemi yapılandırması eksik.');
+    }
+    accountConfigVerified = true;
     if (config.accountAuthEnabled) {
       accountAuthEnabled = true;
       $('loginForm').classList.add('hidden');
@@ -304,11 +312,14 @@ async function checkSession() {
     $('supabaseAuthPanel').classList.add('hidden');
     showAccountOverlay(session.passwordRequired && !session.authenticated);
   } catch (error) {
-    $('supabaseAuthPanel').classList.toggle('hidden', !accountAuthEnabled);
-    $('loginForm').classList.toggle('hidden', accountAuthEnabled);
+    // Fail closed: if account configuration cannot be verified, never fall back to
+    // the legacy shared-password UI or load potentially cross-account local records.
+    accountConfigVerified = false;
+    accountAuthEnabled = true;
+    $('supabaseAuthPanel').classList.remove('hidden');
+    $('loginForm').classList.add('hidden');
     showAccountOverlay(true);
-    if (accountAuthEnabled) $('accountAuthMessage').textContent = error.message || 'Hesap sistemine ulaşılamadı.';
-    else $('loginError').textContent = error.message || 'Giriş servisine ulaşılamadı.';
+    $('accountAuthMessage').textContent = 'Güvenlik nedeniyle hesap yapılandırması doğrulanamadı. Keşif kayıtları açılmadı. Bağlantını kontrol edip sayfayı yenile. (' + (error.message || 'Hesap servisine ulaşılamadı.') + ')';
   }
 }
 $('accountAuthToggle').addEventListener('click', () => {
@@ -699,6 +710,7 @@ if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.ser
 
 (async()=>{
   await checkSession();
+  if (!accountConfigVerified) return;
   try{
     db=await openDB();
     records=await dbGetAll();
