@@ -256,6 +256,9 @@ function renderAccountAuthMode() {
   $('accountAuthSubmit').textContent = signup ? 'Hesap oluştur' : 'Giriş yap';
   $('accountAuthToggle').textContent = signup ? 'Zaten hesabım var' : 'Yeni hesap oluştur';
   $('accountForgotPassword').classList.toggle('hidden', signup);
+  $('legalAcceptanceRow').classList.toggle('hidden', !signup);
+  $('legalAcceptance').required = signup;
+  if (!signup) $('legalAcceptance').checked = false;
   $('accountPasswordInput').autocomplete = signup ? 'new-password' : 'current-password';
   $('accountAuthMessage').textContent = '';
   $('accountAuthForm').classList.remove('hidden');
@@ -332,6 +335,10 @@ $('accountAuthForm').addEventListener('submit', async event => {
   $('accountAuthMessage').textContent = '';
   const email = $('accountEmailInput').value.trim();
   const password = $('accountPasswordInput').value;
+  if (accountAuthMode === 'signup' && !$('legalAcceptance').checked) {
+    $('accountAuthMessage').textContent = 'Hesap oluşturmadan önce Üyelik Koşulları ve bilgilendirme metinlerini inceleyip onaylamalısın.';
+    return;
+  }
   try {
     let result;
     if (accountAuthMode === 'signup') {
