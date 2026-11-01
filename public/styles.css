@@ -81,3 +81,10 @@
 #supabaseAuthPanel input:focus{outline:2px solid #b7c9b5;outline-offset:1px}
 #supabaseAuthPanel .button{width:100%;cursor:pointer}
 @media(max-width:520px){.account-bar{margin:8px 12px 0;padding:6px 0;gap:6px}.account-bar button{padding:8px;font-size:9px}}
+
+/* Legal pages and account registration notice */
+.legal-footer{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:8px}
+.legal-footer a{font-size:11px;color:var(--forest);text-decoration:underline;text-underline-offset:3px}
+.legal-acceptance{display:flex;align-items:flex-start;gap:9px;padding:11px;border:1px solid var(--line);border-radius:12px;background:#fbfaf4;font-size:11px;line-height:1.5;color:#536154}
+.legal-acceptance input{width:17px!important;height:17px;flex:0 0 17px;margin:2px 0 0;accent-color:#245d3d}
+.legal-acceptance a{color:var(--forest);text-decoration:underline;text-underline-offset:2px}
