@@ -23,22 +23,417 @@ function openDB() {
   });
 }
 function tx(mode='readonly') { return db.transaction('records', mode).objectStore('records'); }
-function dbGetAll() { return new Promise((resolve,reject)=>{const r=tx().getAll();r.onsuccess=()=>resolve(r.result||[]);r.onerror=()=>reject(r.error);}); }
-function dbPut(value) { return new Promise((resolve,reject)=>{const r=tx('readwrite').put(value);r.onsuccess=()=>resolve();r.onerror=()=>reject(r.error);}); }
-function dbDelete(id) { return new Promise((resolve,reject)=>{const r=tx('readwrite').delete(id);r.onsuccess=()=>resolve();r.onerror=()=>reject(r.error);}); }
+function dbGetAllRaw() {
+  return new Promise((resolve,reject)=>{
+    const request=tx().getAll();
+    request.onsuccess=()=>resolve(request.result||[]);
+    request.onerror=()=>reject(request.error);
+  });
+}
+async function dbGetAll() {
+  const rows=await dbGetAllRaw();
+  if(!accountAuthEnabled)return rows;
+  if(!authUser)return [];
+  return rows.filter(row=>row.ownerId===authUser.id);
+}
+function dbPut(value) {
+  const row=accountAuthEnabled&&authUser?{...value,ownerId:authUser.id}:value;
+  if(accountAuthEnabled&&!authUser)return Promise.reject(new Error('Kayıt için hesabına giriş yapmalısın.'));
+  return new Promise((resolve,reject)=>{
+    const request=tx('readwrite').put(row);
+    request.onsuccess=()=>resolve();
+    request.onerror=()=>reject(request.error);
+  });
+}
+function dbDelete(id) {
+  return new Promise((resolve,reject)=>{
+    const store=tx('readwrite');
+    const read=store.get(id);
+    read.onerror=()=>reject(read.error);
+    read.onsuccess=()=>{
+      const row=read.result;
+      if(!row||(accountAuthEnabled&&(!authUser||row.ownerId!==authUser.id))){
+        reject(new Error('Bu kaydı silme yetkin yok.'));
+        return;
+      }
+      const remove=store.delete(id);
+      remove.onsuccess=()=>resolve();
+      remove.onerror=()=>reject(remove.error);
+    };
+  });
+}
 function dateLabel(value) { return new Intl.DateTimeFormat('tr-TR',{dateStyle:'medium',timeStyle:'short'}).format(new Date(value)); }
 function firstName(record) { return record.analysis?.candidates?.[0]?.common_name || 'Tanımlanamayan örnek'; }
 function fileToBlob(file) { return file.slice(0, file.size, file.type); }
 
-async function checkSession(){
-  try{const r=await fetch('/api/session');const s=await r.json();if(s.passwordRequired&&!s.authenticated)$('loginOverlay').classList.remove('hidden');}
-  catch{$('loginOverlay').classList.add('hidden');}
+function putRawRecord(value) {
+  return new Promise((resolve,reject)=>{
+    const request=tx('readwrite').put(value);
+    request.onsuccess=()=>resolve();
+    request.onerror=()=>reject(request.error);
+  });
 }
-$('loginForm').addEventListener('submit',async e=>{
-  e.preventDefault();$('loginError').textContent='';
-  try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:$('appPassword').value})});const data=await r.json();if(!r.ok)throw new Error(data.error||'Giriş başarısız.');$('loginOverlay').classList.add('hidden');$('appPassword').value='';toast('Giriş yapıldı.');}
-  catch(err){$('loginError').textContent=err.message;}
+async function claimLegacyRecords() {
+  if(!authUser)return;
+  const all=await dbGetAllRaw();
+  const legacy=all.filter(row=>!row.ownerId);
+  if(!legacy.length)return;
+  const accepted=confirm(
+    'Bu cihazda daha önce kaydedilmiş '+legacy.length+' keşif var. Bunları bu hesabına bağlayalım mı? Kabul edersen kayıtlar ve fotoğraflar hesabına özel bulut alanına yüklenir. Redd edersen yalnızca bu hesapta bu cihazda kalır; başka hesaplara gösterilmez.'
+  );
+  legacyConsentPrompted=true;
+  for(const row of legacy){
+    row.ownerId=authUser.id;
+    await putRawRecord(row);
+  }
+  localStorage.setItem('mantar-cloud-sync-'+authUser.id,accepted?'yes':'no');
+}
+async function pushRecordToCloud(record) {
+  if(!authUser||!supabaseClient)throw new Error('Hesap oturumu bulunamadı.');
+  const storage=supabaseClient.storage.from('mantar-photos');
+  const photoPaths=[];
+  for(let index=0;index<(record.photos||[]).length;index++){
+    const blob=record.photos[index];
+    const extension=blob.type==='image/png'?'png'
+      :blob.type==='image/webp'?'webp'
+      :blob.type==='image/heic'?'heic'
+      :blob.type==='image/heif'?'heif':'jpg';
+    const path=authUser.id+'/'+record.id+'/'+index+'.'+extension;
+    const uploaded=await storage.upload(path,blob,{
+      contentType:blob.type||'image/jpeg',
+      upsert:true
+    });
+    if(uploaded.error)throw uploaded.error;
+    photoPaths.push(path);
+  }
+  const row={
+    id:record.id,
+    user_id:authUser.id,
+    created_at:record.createdAt,
+    updated_at:record.updatedAt||record.createdAt,
+    source:record.source,
+    analysis:record.analysis,
+    note:record.note||'',
+    location:record.location||null,
+    photo_paths:photoPaths,
+    deleted_at:null
+  };
+  const saved=await supabaseClient.from('discoveries').upsert(row,{onConflict:'id'});
+  if(saved.error)throw saved.error;
+}
+async function pullRecordFromCloud(row) {
+  const photos=[];
+  const storage=supabaseClient.storage.from('mantar-photos');
+  for(const path of (row.photo_paths||[])){
+    const downloaded=await storage.download(path);
+    if(downloaded.error)throw downloaded.error;
+    photos.push(downloaded.data);
+  }
+  await putRawRecord({
+    id:row.id,
+    ownerId:authUser.id,
+    createdAt:row.created_at,
+    updatedAt:row.updated_at||row.created_at,
+    source:row.source,
+    analysis:row.analysis,
+    note:row.note||'',
+    location:row.location||null,
+    photos
+  });
+}
+async function deleteCloudRecord(id) {
+  if(!authUser||!supabaseClient)return;
+  const found=await supabaseClient.from('discoveries').select('photo_paths').eq('id',id).maybeSingle();
+  if(found.error)throw found.error;
+  if(!found.data)return;
+  const paths=found.data.photo_paths||[];
+  const removed=await supabaseClient.from('discoveries')
+    .update({deleted_at:new Date().toISOString(),photo_paths:[],updated_at:new Date().toISOString()})
+    .eq('id',id);
+  if(removed.error)throw removed.error;
+  if(paths.length){
+    const cleanup=await supabaseClient.storage.from('mantar-photos').remove(paths);
+    if(cleanup.error)console.warn('Private photo cleanup failed:',cleanup.error.message);
+  }
+}
+async function syncCloudRecords(askConsent=false) {
+  if(!accountAuthEnabled||!supabaseClient||!authUser||!db)return;
+  const button=$('cloudSyncButton');
+  if(button)button.disabled=true;
+  try{
+    await claimLegacyRecords();
+    const response=await supabaseClient.from('discoveries').select('*').order('created_at',{ascending:false});
+    if(response.error)throw response.error;
+    const remoteRows=response.data||[];
+    const remoteById=new Map(remoteRows.map(row=>[row.id,row]));
+    const localRows=await dbGetAll();
+    const deletedIds=new Set(remoteRows.filter(row=>row.deleted_at).map(row=>row.id));
+    for(const deletedId of deletedIds){
+      if(localRows.some(row=>row.id===deletedId)){
+        const local=localRows.find(row=>row.id===deletedId);
+        if(local&&local.ownerId===authUser.id)await dbDelete(deletedId);
+      }
+    }
+    const localOnly=localRows.filter(row=>!remoteById.has(row.id)&&!deletedIds.has(row.id));
+    let consent=localStorage.getItem('mantar-cloud-sync-'+authUser.id);
+    if(!localRows.length&&!consent){
+      consent='yes';
+      localStorage.setItem('mantar-cloud-sync-'+authUser.id,consent);
+    }
+    if(localOnly.length&&consent!=='yes'&&askConsent&&!legacyConsentPrompted){
+      const accepted=confirm(
+        'Bu cihazda hesabına ait '+localOnly.length+' keşif kaydı var. Fotoğraflar, notlar ve isteğe bağlı konumlar güvenli bulut arşivine aktarılsın mı?'
+      );
+      consent=accepted?'yes':'no';
+      localStorage.setItem('mantar-cloud-sync-'+authUser.id,consent);
+    }
+    if(consent==='yes'){
+      for(const local of localRows){
+        const remote=remoteById.get(local.id);
+        if(remote?.deleted_at)continue;
+        const localTime=new Date(local.updatedAt||local.createdAt).getTime();
+        const remoteTime=remote?new Date(remote.updated_at||remote.created_at).getTime():0;
+        if(!remote||localTime>remoteTime)await pushRecordToCloud(local);
+      }
+    }
+    for(const remote of remoteRows){
+      if(remote.deleted_at)continue;
+      const local=localRows.find(row=>row.id===remote.id);
+      const localTime=local?new Date(local.updatedAt||local.createdAt).getTime():0;
+      const remoteTime=new Date(remote.updated_at||remote.created_at).getTime();
+      if(!local||remoteTime>localTime)await pullRecordFromCloud(remote);
+    }
+    records=await dbGetAll();
+    records.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+    updateCounts();
+    renderRecords();
+    if(mapInstance)renderMap();
+    if(!$('statsView').classList.contains('hidden'))renderStats();
+    toast(consent==='yes'?'Bulut eşitlemesi tamamlandı.':'Hesabındaki kayıtlar indirildi. Eski cihaz kayıtları yerel bırakıldı.');
+  }catch(error){
+    toast('Bulut eşitlemesi tamamlanamadı: '+(error.message||'Bağlantı hatası.'));
+  }finally{
+    legacyConsentPrompted=false;
+    if(button)button.disabled=false;
+  }
+}
+
+let supabaseClient = null;
+let authUser = null;
+let accountAuthEnabled = false;
+let accountConfigVerified = false;
+let accountAuthMode = 'login';
+let legacyConsentPrompted = false;
+
+function showAccountOverlay(show) {
+  $('loginOverlay').classList.toggle('hidden', !show);
+}
+function setAccountSession(session) {
+  authUser = session && session.user ? session.user : null;
+  if (authUser) {
+    showAccountOverlay(false);
+    $('accountBar').classList.remove('hidden');
+    $('accountIdentity').textContent = authUser.email || 'Hesabım';
+  } else if (accountAuthEnabled) {
+    $('accountBar').classList.add('hidden');
+    showAccountOverlay(true);
+    records=[];
+    if(db){
+      updateCounts();
+      renderRecords();
+      if(mapInstance)renderMap();
+      if(!$('statsView').classList.contains('hidden'))renderStats();
+    }
+  }
+}
+function renderAccountAuthMode() {
+  const signup = accountAuthMode === 'signup';
+  $('accountAuthTitle').textContent = signup ? 'Yeni hesap oluştur' : 'Hesabına giriş yap';
+  $('accountAuthDescription').textContent = signup
+    ? 'E-postanı doğrula ve keşiflerini hesabında sakla.'
+    : 'Keşiflerine farklı cihazlardan güvenle eriş.';
+  $('accountAuthSubmit').textContent = signup ? 'Hesap oluştur' : 'Giriş yap';
+  $('accountAuthToggle').textContent = signup ? 'Zaten hesabım var' : 'Yeni hesap oluştur';
+  $('accountForgotPassword').classList.toggle('hidden', signup);
+  $('accountPasswordInput').autocomplete = signup ? 'new-password' : 'current-password';
+  $('accountAuthMessage').textContent = '';
+  $('accountAuthForm').classList.remove('hidden');
+  $('accountRecoveryForm').classList.add('hidden');
+}
+async function checkSession() {
+  try {
+    const configResponse = await fetch('/api/config');
+    if (!configResponse.ok) throw new Error('Uygulama yapılandırması alınamadı.');
+    const config = await configResponse.json();
+    if (!config || typeof config.accountAuthEnabled !== 'boolean') {
+      throw new Error('Uygulama hesap yapılandırması geçersiz.');
+    }
+    if (config.accountAuthEnabled && (!config.supabaseUrl || !config.supabaseAnonKey)) {
+      throw new Error('Hesap sistemi yapılandırması eksik.');
+    }
+    accountConfigVerified = true;
+    if (config.accountAuthEnabled) {
+      accountAuthEnabled = true;
+      $('loginForm').classList.add('hidden');
+      $('supabaseAuthPanel').classList.remove('hidden');
+      if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+        throw new Error('Hesap servisi yüklenemedi. Sayfayı yenileyip tekrar dene.');
+      }
+      supabaseClient = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+      });
+      const result = await supabaseClient.auth.getSession();
+      if (result.error) throw result.error;
+      setAccountSession(result.data.session);
+      renderAccountAuthMode();
+      supabaseClient.auth.onAuthStateChange((event, session) => {
+        setAccountSession(session);
+        if (event === 'PASSWORD_RECOVERY') {
+          $('accountAuthTitle').textContent = 'Yeni parola belirle';
+          $('accountAuthDescription').textContent = 'Hesabın için yeni ve güçlü bir parola seç.';
+          $('accountAuthForm').classList.add('hidden');
+          document.querySelector('.auth-actions').classList.add('hidden');
+          $('accountRecoveryForm').classList.remove('hidden');
+          showAccountOverlay(true);
+        }
+        if (event === 'SIGNED_OUT') {
+          $('accountAuthMessage').textContent = 'Oturum kapatıldı.';
+          records=[];
+          updateCounts();
+          renderRecords();
+          if(mapInstance)renderMap();
+        }
+      });
+      return;
+    }
+    const response = await fetch('/api/session');
+    const session = await response.json();
+    $('loginForm').classList.toggle('hidden', !session.passwordRequired || session.authenticated);
+    $('supabaseAuthPanel').classList.add('hidden');
+    showAccountOverlay(session.passwordRequired && !session.authenticated);
+  } catch (error) {
+    // Fail closed: if account configuration cannot be verified, never fall back to
+    // the legacy shared-password UI or load potentially cross-account local records.
+    accountConfigVerified = false;
+    accountAuthEnabled = true;
+    $('supabaseAuthPanel').classList.remove('hidden');
+    $('loginForm').classList.add('hidden');
+    showAccountOverlay(true);
+    $('accountAuthMessage').textContent = 'Güvenlik nedeniyle hesap yapılandırması doğrulanamadı. Keşif kayıtları açılmadı. Bağlantını kontrol edip sayfayı yenile. (' + (error.message || 'Hesap servisine ulaşılamadı.') + ')';
+  }
+}
+$('accountAuthToggle').addEventListener('click', () => {
+  accountAuthMode = accountAuthMode === 'login' ? 'signup' : 'login';
+  renderAccountAuthMode();
 });
+$('accountAuthForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  $('accountAuthMessage').textContent = '';
+  const email = $('accountEmailInput').value.trim();
+  const password = $('accountPasswordInput').value;
+  try {
+    let result;
+    if (accountAuthMode === 'signup') {
+      result = await supabaseClient.auth.signUp({
+        email, password,
+        options: { emailRedirectTo: window.location.origin }
+      });
+      if (result.error) throw result.error;
+      if (result.data.session) {
+        setAccountSession(result.data.session);
+        if (db) await syncCloudRecords(true);
+      } else {
+        $('accountAuthMessage').textContent = 'Kayıt talebin alındı. E-posta adresine gelen doğrulama bağlantısına tıkla.';
+      }
+    } else {
+      result = await supabaseClient.auth.signInWithPassword({ email, password });
+      if (result.error) throw result.error;
+      setAccountSession(result.data.session);
+      if (db) await syncCloudRecords(true);
+      toast('Hesabına giriş yapıldı.');
+    }
+  } catch (error) {
+    $('accountAuthMessage').textContent = error.message || 'İşlem tamamlanamadı.';
+  }
+});
+$('accountForgotPassword').addEventListener('click', async () => {
+  const email = $('accountEmailInput').value.trim();
+  if (!email) {
+    $('accountAuthMessage').textContent = 'Önce e-posta adresini yaz.';
+    return;
+  }
+  try {
+    const result = await supabaseClient.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin
+    });
+    if (result.error) throw result.error;
+    $('accountAuthMessage').textContent = 'Parola yenileme bağlantısı e-posta adresine gönderildi.';
+  } catch (error) {
+    $('accountAuthMessage').textContent = error.message || 'Parola yenileme isteği gönderilemedi.';
+  }
+});
+$('accountRecoveryForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  try {
+    const result = await supabaseClient.auth.updateUser({ password: $('accountNewPassword').value });
+    if (result.error) throw result.error;
+    $('accountAuthMessage').textContent = 'Parolan güncellendi. Şimdi yeni parolanla giriş yapabilirsin.';
+    $('accountNewPassword').value = '';
+    await supabaseClient.auth.signOut();
+    document.querySelector('.auth-actions').classList.remove('hidden');
+    accountAuthMode = 'login';
+    renderAccountAuthMode();
+  } catch (error) {
+    $('accountAuthMessage').textContent = error.message || 'Parola güncellenemedi.';
+  }
+});
+$('loginForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  $('loginError').textContent = '';
+  try {
+    const response = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: $('appPassword').value })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Giriş başarısız.');
+    showAccountOverlay(false);
+    $('appPassword').value = '';
+    toast('Giriş yapıldı.');
+  } catch (error) {
+    $('loginError').textContent = error.message;
+  }
+});
+$('accountLogout').addEventListener('click', async () => {
+  if (!supabaseClient) return;
+  const result = await supabaseClient.auth.signOut();
+  if (result.error) toast('Oturum kapatılamadı: ' + result.error.message);
+});
+$('accountDelete').addEventListener('click', async () => {
+  if (!authUser || !supabaseClient) return;
+  const confirmation = prompt('Hesabını ve buluttaki keşiflerini kalıcı olarak silmek için SİL yaz.');
+  if (confirmation !== 'SİL') return;
+  try {
+    const sessionResult = await supabaseClient.auth.getSession();
+    const token = sessionResult.data?.session?.access_token;
+    if (!token) throw new Error('Oturum bulunamadı. Yeniden giriş yap.');
+    const response = await fetch('/api/account', {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Hesap silinemedi.');
+    const localRows = await dbGetAll();
+    for (const row of localRows) await dbDelete(row.id);
+    await supabaseClient.auth.signOut({ scope: 'local' });
+    toast('Hesabın ve bulut verilerin silindi.');
+  } catch (error) {
+    toast(error.message || 'Hesap silme işlemi tamamlanamadı.');
+  }
+});
+
+$('cloudSyncButton').addEventListener('click', () => syncCloudRecords(true));
 
 function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
@@ -50,16 +445,43 @@ function switchTab(tab) {
 document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
 $('encyclopediaSearch').addEventListener('input',()=>{const q=$('encyclopediaSearch').value.trim().toLocaleLowerCase('tr-TR');document.querySelectorAll('.guide-card').forEach(card=>card.classList.toggle('hidden',!card.textContent.toLocaleLowerCase('tr-TR').includes(q)));});
 
+async function inspectPhotoQuality(files) {
+  const warnings = [];
+  for (const file of files) {
+    if (file.size < 100 * 1024) {
+      warnings.push(`${file.name}: dosya boyutu çok küçük; görüntü ayrıntısı yetersiz olabilir.`);
+      continue;
+    }
+    if (typeof createImageBitmap === 'function' && !['image/heic','image/heif'].includes(file.type)) {
+      try {
+        const bitmap = await createImageBitmap(file);
+        if (Math.min(bitmap.width, bitmap.height) < 700) {
+          warnings.push(`${file.name}: çözünürlük düşük (${bitmap.width}×${bitmap.height}); daha net fotoğraf çek.`);
+        }
+        bitmap.close?.();
+      } catch {
+        // Some mobile browsers cannot decode every image format for local inspection.
+      }
+    }
+  }
+  if (warnings.length) {
+    toast('Fotoğraf kalitesi uyarısı: ' + warnings.slice(0, 2).join(' '));
+  }
+}
+
 function addFiles(list) {
   const incoming = [...list];
+  const accepted = [];
   for (const file of incoming) {
     if (!file.type.startsWith('image/')) continue;
     if (pendingFiles.length >= 5) { toast('En fazla 5 fotoğraf ekleyebilirsin.'); break; }
     if (file.size > 8*1024*1024) { toast(`${file.name}: 8 MB sınırını aşıyor.`); continue; }
     if (!['image/jpeg','image/png','image/webp','image/heic','image/heif'].includes(file.type)) { toast('JPG, PNG, WebP veya iPhone HEIC/HEIF fotoğrafı kullan.'); continue; }
     pendingFiles.push(file);
+    accepted.push(file);
   }
   renderPhotoGrid();
+  if (accepted.length) void inspectPhotoQuality(accepted);
 }
 $('galleryInput').addEventListener('change', e=>{addFiles(e.target.files);e.target.value='';});
 $('cameraInput').addEventListener('change', e=>{addFiles(e.target.files);e.target.value='';});
@@ -105,7 +527,14 @@ async function analyze(){
   const fd=new FormData();pendingFiles.forEach(file=>fd.append('photos',file,file.name));fd.append('source',selectedSource());
   $('loading').classList.remove('hidden');$('resultPanel').classList.add('hidden');$('analyzeBtn').disabled=true;
   try{
-    const response=await fetch('/api/analyze',{method:'POST',body:fd});
+    const headers={};
+    if(accountAuthEnabled){
+      const current=await supabaseClient.auth.getSession();
+      const accessToken=current.data?.session?.access_token;
+      if(!accessToken)throw new Error('Analiz için hesabına giriş yapmalısın.');
+      headers.Authorization='Bearer '+accessToken;
+    }
+    const response=await fetch('/api/analyze',{method:'POST',headers,body:fd});
     const data=await response.json();
     if(!response.ok)throw new Error(data.error||'Analiz başarısız.');
     pendingAnalysis=data.result;renderResult(data.result);
@@ -144,9 +573,15 @@ function renderResult(result){
 }
 async function saveRecord(){
   if(!pendingAnalysis){toast('Önce fotoğraf analizi yapmalısın.');return;}
-  const record={id:crypto.randomUUID(),createdAt:new Date().toISOString(),source:selectedSource(),analysis:pendingAnalysis,photos:pendingFiles.map(fileToBlob),location:pendingLocation?{...pendingLocation}:null};
-  try{await dbPut(record);records=await dbGetAll();updateCounts();renderRecords();toast('Keşif bu telefona kaydedildi.');switchTab('records');}
-  catch{toast('Kayıt saklanamadı. iPhone depolama alanını kontrol et.');}
+  const record={id:crypto.randomUUID(),createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),source:selectedSource(),analysis:pendingAnalysis,photos:pendingFiles.map(fileToBlob),location:pendingLocation?{...pendingLocation}:null};
+  try{
+    await dbPut(record);
+    if(accountAuthEnabled) {
+      try { await pushRecordToCloud({...record,ownerId:authUser.id}); toast('Keşfin hesabına ve bu cihaza kaydedildi.'); }
+      catch(error) { toast('Keşif cihazına kaydedildi; buluta yüklenemedi. Eşitle düğmesini kullan.'); }
+    } else toast('Keşif bu telefona kaydedildi.');
+    records=await dbGetAll();updateCounts();renderRecords();switchTab('records');
+  } catch(error) { toast(error.message||'Kayıt saklanamadı. Cihaz depolama alanını kontrol et.'); }
 }
 
 function recordCard(record){
@@ -222,10 +657,23 @@ function showDetail(id){
   const candidates=(r.analysis?.candidates||[]).map(c=>`<p><b>${esc(c.common_name)}</b> <em>${esc(c.scientific_name)}</em></p>`).join('');
   $('detailContent').innerHTML=`<div class="detail-photos">${photoHtml}</div><h3>${esc(firstName(r))}</h3><p class="detail-meta">${dateLabel(r.createdAt)} · ${r.source==='packaged'?'Paketli kültür mantarı':'Doğadan toplanmış yabani örnek'}</p><p class="detail-meta">${esc(r.analysis?.summary||'')}</p>${candidates}<label class="note-label" for="recordNoteInput">Kişisel not / gözlem</label><textarea id="recordNoteInput" class="note-input" maxlength="2000" placeholder="Örn. bulunduğu ağaç, hava durumu, koku, renk değişimi…">${esc(r.note||'')}</textarea><div class="note-actions"><small id="noteCharCount">0 / 2000</small><button id="saveNoteBtn" class="button primary">Notu kaydet</button></div><div class="safety-lock">Bu uygulama tüketim güvenliği onayı vermez. Yabani mantarı tüketme.</div>${r.location?`<p class="detail-meta">Konum kayıtlı · ${r.location.lat.toFixed(5)}, ${r.location.lon.toFixed(5)}</p>`:'<p class="detail-meta">Bu kayıtta konum yok.</p>'}<div class="detail-buttons"><button id="detailPdf" class="button primary">PDF raporu</button>${r.location?'<button id="detailShare" class="button primary">Konumu paylaş</button>':''}<button id="detailDelete" class="button secondary">Kaydı sil</button></div>`;
   const noteInput=$('recordNoteInput');const countNote=()=>{$('noteCharCount').textContent=`${noteInput.value.length} / 2000`;};countNote();noteInput.addEventListener('input',countNote);
-  $('saveNoteBtn').addEventListener('click',async()=>{r.note=noteInput.value.trim();try{await dbPut(r);records=await dbGetAll();updateCounts();renderRecords();toast('Not kaydedildi.');}catch{toast('Not kaydedilemedi.');}});
+  $('saveNoteBtn').addEventListener('click',async()=>{
+    r.note=noteInput.value.trim();r.updatedAt=new Date().toISOString();
+    try{
+      await dbPut(r);
+      if(accountAuthEnabled)await pushRecordToCloud(r);
+      records=await dbGetAll();updateCounts();renderRecords();toast(accountAuthEnabled?'Not ve kayıt bulutla eşitlendi.':'Not kaydedildi.');
+    }catch(error){toast(error.message||'Not kaydedilemedi veya buluta eşitlenemedi.');}
+  });
   $('detailPdf').addEventListener('click',()=>window.print());
   if(r.location)$('detailShare').addEventListener('click',()=>shareLocation(id));
-  $('detailDelete').addEventListener('click',async()=>{if(confirm('Bu keşif kaydını ve fotoğraflarını bu cihazdan silmek istiyor musun?')){await dbDelete(id);records=await dbGetAll();updateCounts();renderRecords();renderMap();$('detailDialog').close();toast('Kayıt silindi.');}});
+  $('detailDelete').addEventListener('click',async()=>{
+    if(!confirm('Bu keşif kaydını ve fotoğraflarını silmek istiyor musun? Hesabınla eşitlendiyse bulut arşivinden de silinir.'))return;
+    try{
+      if(accountAuthEnabled)await deleteCloudRecord(id);
+      await dbDelete(id);records=await dbGetAll();updateCounts();renderRecords();renderMap();$('detailDialog').close();toast('Kayıt silindi.');
+    }catch(error){toast(error.message||'Kayıt silinemedi.');}
+  });
   $('detailDialog').showModal();
 }
 $('closeDialog').addEventListener('click',()=>$('detailDialog').close());
@@ -288,8 +736,14 @@ $('installHint').addEventListener('click',()=>toast('Safari’de Paylaş düğme
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/service-worker.js').catch(()=>{}));
 
 (async()=>{
-  checkSession();
-  try{db=await openDB();records=await dbGetAll();records.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));updateCounts();renderRecords();}
-  catch{toast('Cihaz içi kayıt alanı açılamadı.');}
+  await checkSession();
+  if (!accountConfigVerified) return;
+  try{
+    db=await openDB();
+    records=await dbGetAll();
+    records.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+    updateCounts();renderRecords();
+    if(accountAuthEnabled&&authUser)await syncCloudRecords(true);
+  }catch(error){toast(error.message||'Cihaz içi kayıt alanı açılamadı.');}
   renderPhotoGrid();
 })();

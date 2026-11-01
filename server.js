@@ -9,6 +9,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const port = Number(process.env.PORT || 3000);
 const GEMINI_MODEL = (process.env.GEMINI_MODEL || 'gemini-3.8-flash').trim();
+const SUPABASE_URL = process.env.SUPABASE_URL ? new URL(process.env.SUPABASE_URL).origin : '';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const ACCOUNT_AUTH_ENABLED = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+if (Boolean(SUPABASE_URL) !== Boolean(SUPABASE_ANON_KEY)) {
+  throw new Error('Hesap sistemi için SUPABASE_URL ve SUPABASE_ANON_KEY birlikte tanımlanmalı.');
+}
 if (!/^[a-zA-Z0-9._-]+$/.test(GEMINI_MODEL)) {
   throw new Error('GEMINI_MODEL geçersiz. Yalnızca model adı kullanın.');
 }
@@ -28,8 +35,8 @@ const upload = multer({
 });
 
 app.disable('x-powered-by');
-if (process.env.NODE_ENV === 'production' && !process.env.APP_PASSWORD) {
-  throw new Error('Production ortamında APP_PASSWORD tanımlanmalı.');
+if (process.env.NODE_ENV === 'production' && !process.env.APP_PASSWORD && !ACCOUNT_AUTH_ENABLED) {
+  throw new Error('Production ortamında Supabase hesap sistemi veya APP_PASSWORD yapılandırılmalı.');
 }
 const sessions = new Map();
 const attempts = new Map();
@@ -52,7 +59,32 @@ function isAuthenticated(req) {
   }
   return true;
 }
-function requireAuth(req, res, next) {
+async function requireAuth(req, res, next) {
+  if (ACCOUNT_AUTH_ENABLED) {
+    const authorization = req.headers.authorization || '';
+    const token = authorization.slice(0, 7).toLowerCase() === 'bearer ' ? authorization.slice(7).trim() : '';
+    if (!token) return res.status(401).json({ error: 'Devam etmek için hesabına giriş yapmalısın.' });
+    try {
+      const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${token}`
+        },
+        signal: AbortSignal.timeout(10000)
+      });
+      if (response.status === 401 || response.status === 403) {
+        return res.status(401).json({ error: 'Oturumun geçersiz veya süresi dolmuş. Yeniden giriş yap.' });
+      }
+      if (!response.ok) {
+        return res.status(503).json({ error: 'Hesap doğrulama servisine şu anda ulaşılamıyor.' });
+      }
+      req.user = await response.json();
+      if (!req.user?.id) return res.status(401).json({ error: 'Hesap doğrulanamadı.' });
+      return next();
+    } catch {
+      return res.status(503).json({ error: 'Hesap doğrulama servisine bağlanılamadı.' });
+    }
+  }
   if (!isAuthenticated(req)) return res.status(401).json({ error: 'Oturum açmalısın.' });
   next();
 }
@@ -83,16 +115,78 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
 app.use(express.json({ limit: '32kb' }));
 
+app.get('/api/config', (_req, res) => {
+  res.json({
+    accountAuthEnabled: ACCOUNT_AUTH_ENABLED,
+    supabaseUrl: ACCOUNT_AUTH_ENABLED ? SUPABASE_URL : null,
+    supabaseAnonKey: ACCOUNT_AUTH_ENABLED ? SUPABASE_ANON_KEY : null
+  });
+});
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
     configured: Boolean(process.env.GEMINI_API_KEY),
-    protected: Boolean(process.env.APP_PASSWORD),
+    protected: ACCOUNT_AUTH_ENABLED || Boolean(process.env.APP_PASSWORD),
+    accountAuthEnabled: ACCOUNT_AUTH_ENABLED,
     provider: 'google-gemini',
     model: GEMINI_MODEL
   });
 });
-app.get('/api/session', (req, res) => res.json({ authenticated: isAuthenticated(req), passwordRequired: Boolean(process.env.APP_PASSWORD) }));
+app.get('/api/session', (req, res) => {
+  if (ACCOUNT_AUTH_ENABLED) {
+    return res.json({ accountAuthEnabled: true, authenticated: false, passwordRequired: false });
+  }
+  res.json({ accountAuthEnabled: false, authenticated: isAuthenticated(req), passwordRequired: Boolean(process.env.APP_PASSWORD) });
+});
+app.delete('/api/account', requireAuth, async (req, res) => {
+  if (!ACCOUNT_AUTH_ENABLED || !req.user?.id) {
+    return res.status(400).json({ error: 'Hesap silme yalnızca hesap sistemi etkin olduğunda kullanılabilir.' });
+  }
+  if (!SUPABASE_SERVICE_ROLE_KEY) {
+    return res.status(503).json({ error: 'Hesap silme servisi henüz yapılandırılmadı.' });
+  }
+  const adminHeaders = {
+    apikey: SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+  };
+  try {
+    const rowsResponse = await fetch(
+      `${SUPABASE_URL}/rest/v1/discoveries?user_id=eq.${encodeURIComponent(req.user.id)}&select=photo_paths`,
+      { headers: adminHeaders, signal: AbortSignal.timeout(15000) }
+    );
+    if (!rowsResponse.ok) {
+      console.error('Account data lookup failed:', rowsResponse.status);
+      return res.status(502).json({ error: 'Hesap verileri silinmeden önce okunamadı. Hesap silinmedi.' });
+    }
+    const rows = await rowsResponse.json();
+    const paths = rows.flatMap(row => Array.isArray(row.photo_paths) ? row.photo_paths : []);
+    for (let offset = 0; offset < paths.length; offset += 500) {
+      const deleteResponse = await fetch(`${SUPABASE_URL}/storage/v1/object/mantar-photos`, {
+        method: 'DELETE',
+        headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prefixes: paths.slice(offset, offset + 500) }),
+        signal: AbortSignal.timeout(30000)
+      });
+      if (!deleteResponse.ok) {
+        console.error('Account photo cleanup failed:', deleteResponse.status);
+        return res.status(502).json({ error: 'Fotoğraflar silinemediği için hesap silme durduruldu. Tekrar deneyebilirsin.' });
+      }
+    }
+    const deleteUserResponse = await fetch(
+      `${SUPABASE_URL}/auth/v1/admin/users/${encodeURIComponent(req.user.id)}`,
+      { method: 'DELETE', headers: adminHeaders, signal: AbortSignal.timeout(15000) }
+    );
+    if (!deleteUserResponse.ok) {
+      console.error('Supabase user deletion failed:', deleteUserResponse.status);
+      return res.status(502).json({ error: 'Supabase hesabı silinemedi. Destek kaydı gerekebilir.' });
+    }
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('Account deletion error:', error.message);
+    return res.status(502).json({ error: 'Hesap silme sırasında sunucuya ulaşılamadı. Tekrar deneyebilirsin.' });
+  }
+});
+
 app.post('/api/login', (req, res) => {
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
   if (tooManyAttempts(ip)) return res.status(429).json({ error: 'Çok fazla deneme yapıldı. 10 dakika sonra tekrar dene.' });
@@ -138,7 +232,8 @@ JSON şeması:
 
 app.post('/api/analyze', requireAuth, (req, res, next) => {
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
-  if (tooManyAnalyses(ip)) return res.status(429).json({ error: 'Bu IP adresinden saatlik analiz sınırına ulaşıldı. Bir süre sonra tekrar dene.' });
+  const limitKey = req.user?.id ? `user:${req.user.id}` : `ip:${ip}`;
+  if (tooManyAnalyses(limitKey)) return res.status(429).json({ error: 'Bu hesap için saatlik analiz sınırına ulaşıldı. Bir süre sonra tekrar dene.' });
   next();
 }, upload.array('photos', 5), async (req, res) => {
   try {

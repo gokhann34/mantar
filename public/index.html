@@ -20,12 +20,37 @@
   </header>
 
   <div id="loginOverlay" class="login-overlay hidden">
+    <section id="supabaseAuthPanel" class="login-card panel hidden">
+      <div class="login-icon">🍄</div><span class="eyebrow">KİŞİSEL KEŞİF DEFTERİN</span>
+      <h2 id="accountAuthTitle">Hesabına giriş yap</h2>
+      <p id="accountAuthDescription">Keşiflerini güvenle sakla, farklı cihazlardan eriş.</p>
+      <form id="accountAuthForm">
+        <input id="accountEmailInput" type="email" autocomplete="email" placeholder="E-posta adresin" required />
+        <input id="accountPasswordInput" type="password" autocomplete="current-password" minlength="8" placeholder="Parola (en az 8 karakter)" required />
+        <button id="accountAuthSubmit" class="button primary" type="submit">Giriş yap</button>
+      </form>
+      <div class="auth-actions">
+        <button id="accountAuthToggle" type="button">Yeni hesap oluştur</button>
+        <button id="accountForgotPassword" type="button">Şifremi unuttum</button>
+      </div>
+      <form id="accountRecoveryForm" class="hidden">
+        <input id="accountNewPassword" type="password" autocomplete="new-password" minlength="8" placeholder="Yeni parola (en az 8 karakter)" required />
+        <button class="button primary" type="submit">Yeni parolayı kaydet</button>
+      </form>
+      <small id="accountAuthMessage" role="status" aria-live="polite"></small>
+    </section>
     <form id="loginForm" class="login-card panel">
       <div class="login-icon">🍄</div><span class="eyebrow">ÖZEL KEŞİF DEFTERİ</span><h2>Tekrar hoş geldin</h2>
       <p>Bu uygulama kişisel kullanım için parola ile korunur.</p>
       <input id="appPassword" type="password" autocomplete="current-password" placeholder="Uygulama parolası" required />
       <button class="button primary" type="submit">Giriş yap</button><small id="loginError"></small>
     </form>
+  </div>
+  <div id="accountBar" class="account-bar hidden">
+    <span id="accountIdentity"></span>
+    <button id="cloudSyncButton" type="button">☁ Bulutu eşitle</button>
+    <button id="accountDelete" type="button">Hesabı sil</button>
+    <button id="accountLogout" type="button">Çıkış</button>
   </div>
   <main>
     <section class="hero panel">
@@ -119,12 +144,23 @@
     </section>
   </main>
 
+  <section class="support-card" aria-labelledby="supportTitle">
+    <div class="support-icon" aria-hidden="true">🌱</div>
+    <div class="support-copy">
+      <span class="eyebrow">DOĞAYA KATKI</span>
+      <h2 id="supportTitle">Keşiflerin doğaya da katkı olsun</h2>
+      <p>Uygulama ücretsizdir. Dilersen TEMA Vakfı’nın resmî sayfasından fidan bağışı yaparak ağaçlandırma çalışmalarını destekleyebilirsin. Sertifika talep etmek için en az 2 fidan bağışı gerekir. Ödeme doğrudan TEMA’ya yapılır; Mantar Dedektifi bağış toplamaz.</p>
+      <a class="button primary" href="https://www.tema.org.tr/fidan-bagisi-secenekleri" target="_blank" rel="noopener noreferrer">TEMA fidan bağış sayfasını aç ↗</a>
+    </div>
+  </section>
+
   <footer><span>© Mantar Dedektifi</span><span>Fotoğraf tahmini ≠ tüketim onayı</span></footer>
 
   <dialog id="detailDialog" class="detail-dialog"><div class="dialog-head"><b>Keşif ayrıntısı</b><button id="closeDialog" class="icon-button">✕</button></div><div id="detailContent"></div></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="/app.js" defer></script>
 </body>
 </html>
