@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const port = Number(process.env.PORT || 3000);
-const GEMINI_MODEL = (process.env.GEMINI_MODEL || 'gemini-3.8-flash').trim();
+const GEMINI_MODEL = (process.env.GEMINI_MODEL || 'gemini-2.0-flash').trim();
 const SUPABASE_URL = process.env.SUPABASE_URL ? new URL(process.env.SUPABASE_URL).origin : '';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -265,7 +265,7 @@ app.post('/api/analyze', requireAuth, (req, res, next) => {
         'x-goog-api-key': process.env.GEMINI_API_KEY,
         'Content-Type': 'application/json'
       },
-      signal: AbortSignal.timeout(90000),
+      signal: AbortSignal.timeout(55000),
       body: JSON.stringify({
         contents: [{ role: 'user', parts }],
         generationConfig: {
@@ -331,7 +331,8 @@ app.post('/api/analyze', requireAuth, (req, res, next) => {
       return res.status(400).json({ error: error.code === 'LIMIT_FILE_SIZE' ? 'Her fotoğraf en fazla 8 MB olabilir.' : 'Fotoğraf yükleme sınırını aştın.' });
     }
     if (error.name === 'TimeoutError' || error.name === 'AbortError') {
-      return res.status(504).json({ error: 'Gemini analiz isteği zaman aşımına uğradı. Daha sonra tekrar dene.' });
+      console.error('Gemini request timed out:', { model: GEMINI_MODEL, photos: req.files?.length || 0 });
+      return res.status(504).json({ error: 'Mantar analizi 55 saniye içinde tamamlanamadı. Fotoğrafların yüklenmesi başarılı; analiz servisi geç yanıt veriyor. Lütfen biraz sonra tekrar dene.' });
     }
     console.error('Analyze error:', error.message);
     res.status(500).json({ error: 'Beklenmeyen sunucu hatası. Sunucu kayıtlarını kontrol et.' });
