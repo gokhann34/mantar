@@ -230,6 +230,7 @@ function showAccountOverlay(show) {
 }
 function setAccountSession(session) {
   authUser = session && session.user ? session.user : null;
+  updateAccountOpenButton();
   if (authUser) {
     showAccountOverlay(false);
     $('accountBar').classList.remove('hidden');
@@ -732,6 +733,8 @@ function renderMap(){
   setTimeout(()=>mapInstance.invalidateSize(),100);
 }
 
+$('accountOpenButton').addEventListener('click',()=>{ if(accountAuthEnabled){ $('loginForm').classList.add('hidden'); $('supabaseAuthPanel').classList.remove('hidden'); renderAccountAuthMode(); showAccountOverlay(true); } else { showAccountOverlay(true); $('loginForm').classList.remove('hidden'); $('supabaseAuthPanel').classList.add('hidden'); } });
+function updateAccountOpenButton(){ const button=$('accountOpenButton'); if(!button)return; button.textContent=authUser?'Hesabım':'Oturum aç'; button.classList.toggle('hidden',!!authUser); }
 $('installHint').addEventListener('click',()=>toast('Safari’de Paylaş düğmesine dokun → “Ana Ekrana Ekle” seç.'));
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/service-worker.js').catch(()=>{}));
 
